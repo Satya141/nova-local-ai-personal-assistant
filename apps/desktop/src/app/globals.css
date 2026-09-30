@@ -1,0 +1,296 @@
+@import "tailwindcss";
+
+:root {
+  color-scheme: light dark;
+  --surface: #fbfbfa;
+  --surface-raised: #f1f1ef;
+  --line: #e4e4e0;
+  --text: #1b1c1f;
+  --text-muted: #6b6d75;
+  --accent: #2f6fed;
+  --accent-soft: rgb(47 111 237 / 0.12);
+  --ok: #1d8a4e;
+  --warn: #a15c00;
+  --danger: #c4322d;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --surface: #17181c;
+    --surface-raised: #202228;
+    --line: #2c2e36;
+    --text: #ececf0;
+    --text-muted: #9295a0;
+    --accent: #5b9bff;
+    --accent-soft: rgb(91 155 255 / 0.16);
+    --ok: #4cc38a;
+    --warn: #e0a345;
+    --danger: #f0736d;
+  }
+}
+
+@theme inline {
+  --color-surface: var(--surface);
+  --color-surface-raised: var(--surface-raised);
+  --color-line: var(--line);
+  --color-text: var(--text);
+  --color-text-muted: var(--text-muted);
+  --color-accent: var(--accent);
+  --color-accent-soft: var(--accent-soft);
+  --color-ok: var(--ok);
+  --color-warn: var(--warn);
+  --color-danger: var(--danger);
+  /* System fonts only: NOVA makes no network requests for its own UI. */
+  --font-sans: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "Cascadia Code", Consolas, ui-monospace, monospace;
+}
+
+html,
+body {
+  /* The window is sized to the content; the page itself never scrolls. */
+  overflow: hidden;
+  background: var(--surface);
+  color: var(--text);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+  cursor: default;
+}
+
+.selectable {
+  user-select: text;
+  cursor: auto;
+}
+
+button {
+  cursor: pointer;
+}
+
+/* New lines in the transcript, and the suggestion chips, rise into place. */
+.rise {
+  animation: rise 0.28s cubic-bezier(0.2, 0.8, 0.2, 1) backwards;
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(7px) scale(0.98);
+  }
+}
+
+/* A reminder slides in from the screen edge. */
+.toast-in {
+  animation: toast-in 0.34s cubic-bezier(0.2, 0.9, 0.3, 1.15) backwards;
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateX(24px);
+  }
+}
+
+/* A suggestion's character perks up when you point at it. */
+.suggestion {
+  transition: border-color 0.15s, transform 0.15s;
+}
+
+.suggestion:hover {
+  transform: translateY(-1px);
+}
+
+.suggestion:hover .character-float {
+  animation: character-pop 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.spinner {
+  width: 10px;
+  height: 10px;
+  border: 1.5px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* The check mark draws itself. */
+.icon-draw {
+  stroke-dasharray: 1;
+  animation: draw 0.35s ease-out backwards;
+}
+
+@keyframes draw {
+  from {
+    stroke-dashoffset: 1;
+  }
+}
+
+/* "Thinking..." with dots that arrive one at a time. */
+.ellipsis::after {
+  content: "...";
+  display: inline-block;
+  width: 1.2em;
+  overflow: hidden;
+  vertical-align: bottom;
+  animation: ellipsis 1.2s steps(4, jump-none) infinite;
+}
+
+@keyframes ellipsis {
+  from {
+    width: 0;
+  }
+}
+
+.mic-button {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 999px;
+  color: var(--text-muted);
+  transition: background 0.15s, color 0.15s;
+}
+
+.mic-button:hover {
+  background: var(--surface-raised);
+  color: var(--text);
+}
+
+.mic-button:focus-visible {
+  outline: 2px solid var(--accent);
+}
+
+/* While NOVA listens or talks, the button becomes "stop" and glows. */
+.mic-button[data-active="true"] {
+  background: var(--accent-soft);
+  color: var(--accent);
+  box-shadow: 0 0 0 0 var(--accent-soft);
+  animation: mic-glow 1.4s ease-out infinite;
+}
+
+@keyframes mic-glow {
+  70% {
+    box-shadow: 0 0 0 7px transparent;
+  }
+}
+
+/* The microphone is open. Red, like a recording light, and never hidden. */
+.live-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #f0473f;
+  box-shadow: 0 0 0 2px rgb(240 71 63 / 0.25);
+}
+
+.keycap,
+.keycap-inline {
+  font-family: var(--font-sans);
+  color: var(--text-muted);
+  background: var(--surface-raised);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+}
+
+.keycap {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  min-width: 30px;
+  height: 22px;
+  padding: 0 6px;
+  font-size: 11px;
+}
+
+.keycap-inline {
+  padding: 1px 5px;
+  font-size: 10px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rise,
+  .toast-in,
+  .mic-button[data-active="true"],
+  .icon-draw,
+  .spinner,
+  .ellipsis::after,
+  .suggestion:hover .character-float {
+    animation: none;
+  }
+
+  .ellipsis::after {
+    width: 1.2em;
+  }
+}
+
+.transcript::-webkit-scrollbar {
+  width: 8px;
+}
+
+.transcript::-webkit-scrollbar-thumb {
+  background: var(--line);
+  border-radius: 4px;
+}
+
+/* Assistant replies are Markdown. */
+.markdown {
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+
+.markdown > * + * {
+  margin-top: 0.6em;
+}
+
+.markdown :is(ul, ol) {
+  padding-left: 1.3em;
+}
+
+.markdown ul {
+  list-style: disc;
+}
+
+.markdown ol {
+  list-style: decimal;
+}
+
+.markdown li + li {
+  margin-top: 0.2em;
+}
+
+.markdown :is(h1, h2, h3, h4) {
+  font-weight: 600;
+}
+
+.markdown a {
+  color: var(--accent);
+}
+
+.markdown code {
+  font-family: var(--font-mono);
+  font-size: 0.88em;
+  background: var(--surface-raised);
+  border-radius: 4px;
+  padding: 0.1em 0.35em;
+}
+
+.markdown pre {
+  background: var(--surface-raised);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0.7em 0.9em;
+  overflow-x: auto;
+}
+
+.markdown pre code {
+  background: none;
+  padding: 0;
+}

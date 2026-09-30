@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "nova-ui",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["--dir", "apps/desktop", "dev"],
+      "port": 3000
+    }
+  ]
+}

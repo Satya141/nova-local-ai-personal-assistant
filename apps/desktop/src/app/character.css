@@ -1,0 +1,250 @@
+/* NOVA's characters. The component sets data-kind and data-state; everything
+   visual lives here. A character keeps its own colour in every state: status is
+   told through the face, the motion and a small mark, never by recolouring.
+   Only transform and opacity animate, so an always-visible character stays cheap. */
+
+.character {
+  --hi: #c9d4ff;
+  --mid: #6f86ff;
+  --lo: #3a44d6;
+  --ink: #12122b;
+  --glow: rgb(111 134 255 / 0.4);
+  display: inline-flex;
+  flex: none;
+  filter: drop-shadow(0 2px 5px var(--glow));
+  transition: filter 0.4s;
+}
+
+.character[data-kind="ember"] { --hi: #ffe0a6; --mid: #ff9838; --lo: #e65a10; --glow: rgb(255 152 56 / 0.4); }
+.character[data-kind="fern"] { --hi: #c4f7e4; --mid: #2fcfa5; --lo: #0c8f7c; --glow: rgb(47 207 165 / 0.4); }
+.character[data-kind="plum"] { --hi: #efd0ff; --mid: #b56bf2; --lo: #7a32c4; --glow: rgb(181 107 242 / 0.4); }
+.character[data-kind="chime"] { --hi: #fff4c2; --mid: #ffc628; --lo: #d98a00; --glow: rgb(255 198 40 / 0.45); }
+
+.character svg {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.character-stop-hi { stop-color: var(--hi); }
+.character-stop-mid { stop-color: var(--mid); }
+.character-stop-lo { stop-color: var(--lo); }
+
+.character-trim { fill: var(--mid); }
+.character[data-kind="fern"] .character-trim { fill: #57c84d; }
+.character[data-kind="plum"] .character-trim { fill: var(--lo); }
+.character[data-kind="chime"] .character-trim { fill: var(--lo); }
+
+/* Transform origins are in viewBox units: the body's centre is about (32, 35). */
+.character-float,
+.character-body,
+.character-face,
+.character-orbit,
+.character-ring,
+.character-waves,
+.character-sparks { transform-origin: 32px 35px; }
+.character-eyes { transform-origin: 32px 35px; }
+.character-mouth { transform-origin: 32px 44.500px; }
+.character-star { transform-origin: 51px 9px; }
+.character-leaf { transform-origin: 33.500px 11.500px; }
+
+.character-body,
+.character-face { transition: transform 0.32s cubic-bezier(0.34, 1.56, 0.64, 1); }
+
+/* --- faces ------------------------------------------------------------- */
+
+.character-eyes {
+  opacity: 0;
+  fill: var(--ink);
+  transition: opacity 0.12s, transform 0.26s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.character-eyes path {
+  fill: none;
+  stroke: var(--ink);
+  stroke-width: 2.900;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.character-glint { fill: #fff; }
+.character-mouth { fill: var(--ink); opacity: 0; transition: opacity 0.12s; }
+.character-blush { fill: #ff6f91; opacity: 0; transition: opacity 0.25s; }
+
+.character:is([data-state="idle"], [data-state="listening"], [data-state="thinking"], [data-state="working"], [data-state="speaking"], [data-state="confirm"], [data-state="ringing"], [data-state="hearing"]) .character-eyes-open,
+.character[data-state="done"] .character-eyes-happy,
+.character[data-state="asleep"] .character-eyes-closed,
+.character[data-state="error"] .character-eyes-cross { opacity: 1; }
+
+/* --- extras, hidden unless a state turns them on ------------------------ */
+
+.character-orbit { fill: var(--mid); opacity: 0; transition: opacity 0.2s; }
+.character-ring {
+  fill: none;
+  stroke: var(--mid);
+  stroke-width: 2.600;
+  stroke-linecap: round;
+  stroke-dasharray: 48 134;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+.character-star { fill: #ffd34d; }
+.character-sonar circle {
+  fill: none;
+  stroke: var(--mid);
+  stroke-width: 2;
+  opacity: 0;
+  transform-origin: 32px 34px;
+}
+.character-waves {
+  fill: none;
+  stroke: var(--mid);
+  stroke-width: 2.600;
+  stroke-linecap: round;
+  opacity: 0;
+}
+.character-sparks { fill: #ffd34d; opacity: 0; }
+.character-mark {
+  font: 800 18px/1 var(--font-sans);
+  text-anchor: middle;
+  opacity: 0;
+}
+.character-mark-question { fill: #f59f00; }
+.character-mark-sleep { fill: var(--mid); }
+
+/* --- states -------------------------------------------------------------- */
+
+.character[data-state="idle"] .character-float { animation: character-float 3.400s ease-in-out infinite; }
+.character[data-state="idle"] .character-eyes-open { animation: character-blink 4.600s infinite; }
+.character[data-state="idle"] .character-star { animation: character-twinkle 2.800s ease-in-out infinite; }
+.character[data-state="idle"] .character-leaf { animation: character-sway 3s ease-in-out infinite; }
+
+/* Leans towards the text box and opens its eyes wider. */
+.character[data-state="listening"] .character-body { transform: rotate(7deg); }
+.character[data-state="listening"] .character-face { transform: translate(2.200px, 0.500px); }
+.character[data-state="listening"] .character-eyes-open { transform: scale(1.160); }
+
+.character[data-state="thinking"] .character-orbit { opacity: 1; animation: character-spin 1.500s linear infinite; }
+.character[data-state="thinking"] .character-face { animation: character-ponder 1.800s ease-in-out infinite; }
+.character[data-state="thinking"] .character-star { opacity: 0; }
+
+.character[data-state="working"] .character-ring { opacity: 1; animation: character-spin 0.950s linear infinite; }
+.character[data-state="working"] .character-eyes-open { transform: scaleY(0.600); }
+.character[data-state="working"] .character-face { animation: character-scan 0.900s ease-in-out infinite; }
+.character[data-state="working"] .character-float { animation: character-float 0.700s ease-in-out infinite; }
+.character[data-state="working"] .character-star { opacity: 0; }
+
+.character[data-state="speaking"] .character-mouth { opacity: 1; animation: character-talk 0.300s ease-in-out infinite; }
+.character[data-state="speaking"] .character-float { animation: character-float 0.900s ease-in-out infinite; }
+
+/* Tilts its head and raises a question mark. */
+.character[data-state="confirm"] .character-body { animation: character-tilt 1.600s ease-in-out infinite; }
+.character[data-state="confirm"] .character-eyes-open { transform: scale(1.140); }
+.character[data-state="confirm"] .character-mark-question { opacity: 1; animation: character-hover 1.200s ease-in-out infinite; }
+.character[data-state="confirm"] .character-star { opacity: 0; }
+
+.character[data-state="done"] .character-float { animation: character-pop 0.620s cubic-bezier(0.34, 1.56, 0.64, 1); }
+.character[data-state="done"] .character-sparks { animation: character-burst 0.800s ease-out forwards; }
+.character[data-state="done"] .character-blush { opacity: 0.550; }
+
+.character[data-state="error"] .character-float { animation: character-shake 0.450s ease-in-out; }
+.character[data-state="error"] .character-body { transform: scale(1.040, 0.940); }
+.character[data-state="error"] .character-star { opacity: 0.250; }
+
+.character[data-state="asleep"] { filter: saturate(0.450) drop-shadow(0 2px 5px rgb(120 128 150 / 0.250)); }
+.character[data-state="asleep"] .character-body { animation: character-breathe 3.200s ease-in-out infinite; }
+.character[data-state="asleep"] .character-mark-sleep { animation: character-doze 2.400s ease-out infinite; }
+.character[data-state="asleep"] .character-star { opacity: 0; }
+
+/* Swings from its loop like a struck bell, clapper lagging behind, with sound waves. */
+.character[data-state="ringing"] .character-body {
+  transform-origin: 32px 9px;
+  animation: character-ring 0.9s ease-in-out infinite;
+}
+.character[data-state="ringing"] .character-clapper {
+  transform-origin: 32px 44px;
+  animation: character-clap 0.9s ease-in-out infinite;
+}
+.character[data-state="ringing"] .character-eyes-open { transform: scale(1.160); }
+.character[data-state="ringing"] .character-mouth { opacity: 1; }
+.character[data-state="ringing"] .character-waves { animation: character-waves 0.9s ease-out infinite; }
+.character[data-state="ringing"] .character-star { opacity: 0; }
+
+/* Wide-eyed and leaning in while ripples show it is taking in sound. */
+.character[data-state="hearing"] .character-eyes-open { transform: scale(1.180); }
+.character[data-state="hearing"] .character-body { transform: rotate(-4deg); }
+.character[data-state="hearing"] .character-float { animation: character-float 1.100s ease-in-out infinite; }
+.character[data-state="hearing"] .character-sonar circle { animation: character-sonar 1.600s ease-out infinite; }
+.character[data-state="hearing"] .character-sonar circle + circle { animation-delay: 0.800s; }
+.character[data-state="hearing"] .character-star { opacity: 0; }
+
+/* --- keyframes ------------------------------------------------------------ */
+
+@keyframes character-sonar {
+  0% { opacity: 0.800; transform: scale(0.850); }
+  100% { opacity: 0; transform: scale(1.350); }
+}
+@keyframes character-ring {
+  0%, 100% { transform: rotate(0); }
+  12% { transform: rotate(16deg); }
+  28% { transform: rotate(-14deg); }
+  44% { transform: rotate(10deg); }
+  60% { transform: rotate(-6deg); }
+  76% { transform: rotate(2deg); }
+}
+@keyframes character-clap {
+  0%, 100% { transform: rotate(0); }
+  12% { transform: rotate(-22deg); }
+  28% { transform: rotate(20deg); }
+  44% { transform: rotate(-14deg); }
+  60% { transform: rotate(8deg); }
+}
+@keyframes character-waves {
+  0% { opacity: 0; transform: scale(0.8); }
+  25% { opacity: 1; }
+  100% { opacity: 0; transform: scale(1.1); }
+}
+
+@keyframes character-float { 50% { transform: translateY(-2.200px); } }
+@keyframes character-blink { 0%, 93%, 100% { transform: scaleY(1); } 96% { transform: scaleY(0.080); } }
+@keyframes character-twinkle { 50% { transform: scale(0.620) rotate(45deg); opacity: 0.550; } }
+@keyframes character-sway { 50% { transform: rotate(-14deg); } }
+@keyframes character-spin { to { transform: rotate(360deg); } }
+@keyframes character-ponder {
+  0%, 100% { transform: translate(-2.600px, -2.800px); }
+  50% { transform: translate(2.600px, -2.800px); }
+}
+@keyframes character-scan { 0%, 100% { transform: translateX(-2.600px); } 50% { transform: translateX(2.600px); } }
+@keyframes character-talk { 0%, 100% { transform: scaleY(0.300); } 50% { transform: scaleY(1.300); } }
+@keyframes character-tilt { 0%, 100% { transform: rotate(-11deg); } 50% { transform: rotate(-5deg); } }
+@keyframes character-hover { 50% { transform: translateY(-2.500px); } }
+@keyframes character-pop {
+  0% { transform: scale(0.880); }
+  45% { transform: scale(1.160) translateY(-3.500px); }
+  100% { transform: scale(1); }
+}
+@keyframes character-burst {
+  0% { transform: scale(0.300); opacity: 0; }
+  35% { opacity: 1; }
+  100% { transform: scale(1.150); opacity: 0; }
+}
+@keyframes character-shake {
+  0%, 100% { transform: translateX(0); }
+  20%, 60% { transform: translateX(-3px); }
+  40%, 80% { transform: translateX(3px); }
+}
+@keyframes character-breathe { 50% { transform: scale(1.040, 0.960); } }
+@keyframes character-doze {
+  0% { transform: translate(-3px, 4px) scale(0.600); opacity: 0; }
+  30% { opacity: 0.900; }
+  100% { transform: translate(3px, -6px) scale(1); opacity: 0; }
+}
+
+/* With reduced motion the face and marks still change; nothing loops. */
+@media (prefers-reduced-motion: reduce) {
+  .character * { animation: none !important; }
+  .character[data-state="thinking"] .character-face { transform: translateY(-2.800px); }
+  .character[data-state="thinking"] .character-orbit,
+  .character[data-state="ringing"] .character-waves,
+  .character[data-state="hearing"] .character-sonar circle:first-child,
+  .character[data-state="asleep"] .character-mark-sleep,
+  .character[data-state="done"] .character-sparks { opacity: 1; }
+}

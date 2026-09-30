@@ -1,0 +1,145 @@
+# NOVA architecture
+
+This describes what exists today (Phases 1 to 3) and records why it is built this way.
+
+## The pieces
+
+```
+  Alt+Space
+      |
++-----v-------------------------------+        +-------------------------------------------+
+| Desktop shell (Tauri, Rust)         | spawns | Backend (Python, FastAPI)                 |
+|  - tray icon and menu               +------->|  127.0.0.1:<random port>                  |
+|  - global shortcut                  | token  |                                           |
+|  - launcher window  (WebView2)      |        |  POST /api/chat -> Agent loop             |
+|  - reminder window  (WebView2,      |        |     |-> ModelProvider -> Ollama (qwen3)   |
+|    never takes focus)               |        |     |-> ToolRegistry -> PermissionGate    |
+|       |                             |        |     |-> MemoryStore <- Embedder (CPU)     |
+|  Next.js UI (static export)         | HTTP   |     '-> ActionLog                         |
+|   renders the chat event stream     +------->|  after the reply: MemoryExtractor         |
+|   and the server event stream       |<-------+  GET /api/events <- EventBus <- Scheduler |
++-------------------------------------+ NDJSON |  SQLite: conversations, memories,         |
+                                               |          reminders, action log            |
+                                               +-------------------------------------------+
+```
+
+The desktop app is a thin client. Everything the assistant *decides or does* happens in the backend, so the future mobile app can reuse it unchanged.
+
+## One turn, step by step
+
+1. The UI posts the message to `POST /api/chat` and reads a stream of newline-delimited JSON events.
+2. The agent stores the message, looks up relevant memories, and builds the prompt: system prompt, a 14-day calendar, what it remembers about the user (each with its id), and recent history.
+3. The model streams a reply. If it asks for a tool, the agent:
+   - looks the tool up in the registry (unknown tool: error result, nothing runs),
+   - validates the arguments against the tool's Pydantic schema (invalid: error result, nothing runs),
+   - answers an identical repeat of an earlier call in the same turn from the first result, without running it again,
+   - asks the permission gate. Risky tools emit `confirm_request` and wait for `POST /api/confirmations/{id}`; no answer within 120 s is a denial,
+   - runs the handler, stores its result as the tool's observation, and records the attempt in the action log.
+4. The loop repeats, up to 8 steps, until the model replies without calling a tool.
+5. After `done` is sent, the memory extractor reads the user's message in the background. It is told which actions were just carried out, so requests are not mistaken for facts. New memories go out on the event bus as `memory_saved`.
+
+Chat events are defined at the top of `backend/nova/agent/loop.py`; server events (`reminder`, `memory_saved`, `ping`) in `backend/nova/api/app.py`.
+
+## Decisions
+
+### Phase 1
+
+**Backend as a child process of the shell.** Tauri starts `python -m nova` from the repository's virtual environment, choosing a free port and a random 256-bit token and passing both through the environment. The webviews get the same pair from a Tauri command. Alternative considered: a separately installed Windows service. Rejected for now because it needs an installer and elevation; revisit in Phase 10 together with bundling the interpreter.
+
+**Bearer token on a loopback API.** A local HTTP API that can open and close applications must not be callable by any web page the user happens to visit. Loopback binding plus a per-launch token, plus a CORS allowlist of the webview's own origins, closes that.
+
+**Backend exits with the shell.** A venv's `python.exe` on Windows is a launcher that starts the real interpreter as a child, so killing the process handle the shell holds is not enough. The backend instead watches the shell's process ID and exits when it disappears. Verified by force-killing the shell.
+
+**Tool calls are validated and gated outside the model.** The model's output is treated as a request, never as an instruction.
+
+**Closing an app closes its window, not its process.** Store apps share one host process, so killing by process would close all of them. `close_application` posts a close message to the matching window, which also lets the app show its own "save changes?" prompt.
+
+**Opening an app never executes model-written text.** The name is matched against the Start menu index and launched by its ID. Typo tolerance is tight and a fuzzy match is reported as a guess, after a test where "Photoshop" opened "Photos" and was reported as a success.
+
+**Model loading follows the launcher.** Opening the launcher triggers a warm-up; Ollama unloads the model after 10 idle minutes. Measured on an RTX 5050 (8 GB): about 6 s to reload, then 1 to 3 s per reply.
+
+**Context size is set explicitly (8192 tokens).** Ollama's default of 4096 is too small for the tool schemas plus a conversation, and changing it between requests reloads the model, so the same value is sent on every call.
+
+**Static-export Next.js, no Node server; system fonts only.** The interface makes no network requests of its own.
+
+**Narrow webview permissions.** Both windows have only `core:default` plus NOVA's own commands. Neither can reach Tauri's file system, shell or window APIs directly.
+
+### Phase 2
+
+**No separate planner.** The evaluation suite measured multi-step requests (up to three tools in one message, such as search, open, then set a reminder) at 100% with the plain tool-calling loop, median 1.1 s. A planning pass would add a model call to every request without fixing anything measurable, so it was not built. The loop gained a higher step limit (8) and a guard that answers identical repeated calls from the first result.
+
+**Measure against the real model.** `backend/evals` runs realistic requests through the real agent and model with the computer-facing tools sandboxed, repeated to catch flakiness. Nearly every Phase 2 prompt change was driven by a failing case there, or by a case found in real use and then added there.
+
+**The model does not do calendar arithmetic.** Asked to write "next Friday" as a date, qwen3:8b produced "Friday, 8 October 2026" (a Thursday) and "Friday, 3 October 2026" (a Saturday). Prompts now include a list of the next 14 days to copy from, and weekday phrases in memories ("next Friday", "on Friday") are resolved to real dates in code before storing.
+
+**Long-term memory is short sentences plus embeddings, in SQLite.** Each memory is one third-person sentence with a category, stored with its embedding as a float32 blob and searched by brute-force cosine similarity. At personal scale (hundreds of rows) this takes milliseconds and needs no vector database.
+
+**Embeddings run on the CPU.** The chat model fills the 8 GB GPU; loading an embedding model there too would make Ollama evict one of them on every turn. `embeddinggemma` with `num_gpu: 0` coexists with qwen3 on the GPU and embeds a query in about 20 ms. Without it, memory falls back to keyword overlap rather than failing.
+
+**Thresholds come from measurement.** On embeddinggemma, relevant query-to-memory pairs scored 0.22 to 0.48 (median 0.39) and unrelated ones a median of 0.12, 95% under 0.22, so the relevance threshold is 0.3; the first guess of 0.5 would have matched nothing. Rewordings of one fact scored 0.91 to 0.99, so 0.9 merges duplicates, with the newer wording winning. Profile, preference and project memories are always in the prompt, because "what am I working on?" scored only 0.26 against "The user is building NOVA".
+
+**Memories carry visible ids in the prompt.** "Forget that I like jazz" failed until the prompt listed memories as `#12: The user likes jazz.`; the model can then call `forget(12)` directly instead of searching first.
+
+**Automatic memory is conservative, and its safety checks are in code.** The extractor sees the message, related existing memories, the calendar, worked examples, and the actions just carried out. Before anything is stored, code refuses secrets and ID numbers (every memory, explicit or not), drops lines not phrased as facts about the user, drops facts that expire within hours ("in 1 minute", "tomorrow", "remind…"), and caps each message at three. On the extraction eval it keeps the lasting fact in all 10 messages that contain one, and saves nothing from 9 commands, questions, reminders and secrets. Every saved memory appears under the conversation with a Forget button.
+
+**Reminders: own scheduler rather than APScheduler.** The `reminders` table is the source of truth and a small asyncio loop sleeps until the next due time (waking at least every 30 s to absorb clock changes). This persists across restarts with no extra dependency, whereas APScheduler's persistent job store would pull in SQLAlchemy. A reminder due while NOVA was closed fires at the next start and is shown as missed. Repeats are stepped in local wall-clock time, so "every day at 9" stays at 9 across daylight-saving changes. Snoozing one occurrence of a repeating reminder creates a one-off copy and leaves the series alone.
+
+**Reminders pop up in NOVA's own window, not a Windows notification.** Toasts from an app that is not installed are attributed to PowerShell, and a custom window can show Chime. The window is created with `focusable: false`, which gives it `WS_EX_NOACTIVATE`: verified that it appears over the user's current window without taking focus. It stays until Snooze or Done.
+
+**Server-to-client events are a streamed response, not WebSockets.** `GET /api/events` is NDJSON like the chat stream, with a heartbeat every 15 s. On connect it first replays reminders that are still waiting to be acknowledged, subscribing before it lists them so nothing fired in between is lost; clients dedupe by id and reconnect with backoff.
+
+**Every action is logged.** The `action_log` table records each tool call the model attempted, its arguments, and whether it ran, was approved, declined or rejected. It is readable at `GET /api/actions` and is the raw material for the Phase 9 timeline.
+
+**One database, versioned migrations.** `nova/database.py` owns the SQLite connection and an append-only list of migrations; `PRAGMA user_version` records how many ran. A Phase 1 database upgrades in place (tested).
+
+### Phase 3: voice
+
+```
+microphone (16 kHz, 32 ms chunks)
+  -> Silero VAD, streaming ----------------> utterance (after 700 ms of silence)
+  -> tiny.en, hotwords "Hey Nova" ---------> starts with the wake phrase? where does it end?
+       no  -> dropped
+       yes -> base.en on the audio after it -> "voice_command" event
+                                                -> launcher runs an ordinary chat turn (voice=true)
+                                                -> POST /api/voice/speak -> Piper -> speaker
+```
+
+**The wake phrase is spotted by speech recognition, not a dedicated wake-word model.** No "Hey Nova" model exists. Training one means openWakeWord's pipeline (2022-era pinned dependencies, about 45 GB of data) or a newer tool that needs dozens of recordings of the user. Instead a voice activity detector runs continuously (Silero, the ONNX model already inside faster-whisper, so no extra download), and only when someone speaks does Whisper tiny.en read the first three seconds. This costs CPU only while there is speech, and lets people say the whole thing in one breath. `Transcriber.find_wake` is the place to plug in a trained model later.
+
+**Measured choices, from `evals/voice.py` and side-by-side experiments on synthetic speech:**
+
+- *Priming the wake check.* No hint caught 26 of 42 wake phrases. An `initial_prompt` of "Hey Nova," caught 38: Whisper reads a prompt as words already spoken, so it sometimes skipped them. `hotwords="Hey Nova"` caught all 42. None of the three woke on any of 36 other sentences, including "supernova" and "My friend Nova is coming over".
+- *Two models.* base.en is better at commands ("Notepad" where tiny heard "NoPad"), but primed with the wake phrase it heard "hang over". tiny finds the phrase and its end; base.en transcribes only the audio after it.
+- *Where to cut.* Cutting exactly at tiny's timestamp left the tail of "Nova" in the command ("Never find my resume", "Remember, remind me…"). Cutting 0.10 s later took exact commands from 18 of 27 to 24 of 27; waiting longer gained nothing.
+- *Priming the command model.* A glossary of app names and common words fixed "call mom" (heard "Como") and "Notepad". Sample sentences as a prompt leaked their words into transcripts, and hotword lists longer than the wake phrase made the model repeat itself.
+- *Silence.* Whisper invents "Thank you very much" for near-silence, so a command needs 300 ms of detected speech after the wake phrase; shorter means "Hey Nova" on its own, which plays a chime and takes the next utterance as the command.
+
+Result: 97 of 99 commands exact over three runs (three speeds, background noise), no false wakes, command ready about 0.7 s after the speaker stops. Synthetic speech is easier than a real voice in a real room, so this is a floor to keep, not proof.
+
+**Everything runs on the CPU.** qwen3 fills the GPU; tiny.en and base.en (int8) take about 0.25 s and 0.4 s per utterance on the i7-14700HX, and Piper speaks a sentence in about 0.3 s after a one-time warm-up.
+
+**A voice command is an ordinary chat turn.** The backend only turns speech into text and text into speech. The launcher receives `voice_command`, shows itself, and runs the turn with `voice=true`, which adds one instruction to the system prompt: reply in one or two plain spoken sentences. Confirmations, tool rows and memory work exactly as for typed requests. If a turn needs approval, NOVA says so aloud and waits for the click. The reply's Markdown, code, links and file paths are stripped before it is spoken, and long replies are cut to their opening sentences.
+
+**Interrupting.** Saying "Hey Nova" again stops NOVA mid-sentence, since the listener keeps running while it speaks. Esc, typing a request, or the stop button does the same. "Hey Nova, stop" (or "cancel", "never mind") only stops; it is not sent to the agent.
+
+**Privacy.** The microphone is off by default and opens only while "Listen for Hey Nova" is on or for a single mic-button command (it closes after 8 s of nothing). While it is open the tray icon carries a red dot and the launcher footer shows it. Audio is kept in memory only for the utterance being processed, is never written to disk or sent anywhere, and speech that does not start with the wake phrase is discarded. Models load with `local_files_only=True`, so voice makes no network requests.
+
+**Models live in the checkout, not AppData.** Programs started from a sandboxed (MSIX-packaged) host get a private, redirected copy of `%LOCALAPPDATA%`. Voice models downloaded that way were invisible to a NOVA started normally. Until the Phase 10 installer, models live in `backend/models` (git-ignored), which every way of starting NOVA can see.
+
+**Licences.** The Piper engine moved to the GPL-3.0 `piper1-gpl` repository in 2025. The voice is `en_US-ljspeech-high`, trained on the public-domain LJ Speech dataset; `hfc_female` was rejected for its non-commercial licence. NOVA's own licence, still unchosen, has to account for the GPL engine (or swap the synthesiser, which sits behind `Synthesizer`).
+
+## Layout differences from the original plan
+
+The plan listed `inference/`, `voice/`, `vision/` and `sync/` as top-level folders. They are instead subpackages of `backend/nova/` as they get built, so there is a single importable Python package and one virtual environment.
+
+## Known limits
+
+- The shell finds the backend at the repository path it was built from (override with `NOVA_BACKEND_DIR`). There is no installer that bundles Python yet, so a release build only runs on a machine with this checkout.
+- Windows only. The tools return a clear "not implemented" result elsewhere.
+- File search walks the home folder for up to 5 s and matches names only, not contents.
+- One conversation at a time in the launcher; a fresh one starts after 20 idle minutes, and older ones are stored but not browsable yet. Memory carries across conversations.
+- No screen yet for browsing or editing all memories, or for the action log; the API endpoints exist for the Phase 10 dashboards.
+- Scheduled agent tasks ("every morning, summarise my email") are not built; they need the Phase 5 integrations to be useful.
+- Clicking the reminder window's buttons was verified through the webview, not with a physical mouse click on the no-activate window.
+- Voice is English only, and was tuned on synthetic speech. It has not yet been measured with a real voice, accent or room. With laptop speakers instead of headphones, NOVA's own voice reaches the microphone; that is harmless unless its reply begins with "Hey Nova".
+- The mic button and the tray toggle were tested live; the full spoken round trip (speak, act, reply aloud) was tested through the pipeline with the real models, not with a person speaking.

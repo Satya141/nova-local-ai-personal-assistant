@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "NOVA's windows may listen for events and call NOVA's own commands. They get no direct access to the window, file system or shell APIs.",
+  "windows": ["launcher", "toast"],
+  "permissions": ["core:default"]
+}

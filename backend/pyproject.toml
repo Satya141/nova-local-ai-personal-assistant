@@ -1,0 +1,34 @@
+[project]
+name = "nova-backend"
+version = "0.1.0"
+description = "NOVA agent backend: model routing, tools, permissions and memory."
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.142,<1",
+    "uvicorn>=0.54,<1",
+    "httpx>=0.28,<1",
+    # Voice (Phase 3). piper-tts is GPL-3.0; see docs/architecture.md.
+    "numpy>=2",
+    "faster-whisper>=1.2,<2",
+    "sounddevice>=0.5,<1",
+    "piper-tts>=1.8,<2",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=9",
+    "pytest-asyncio>=1",
+    # Starlette's TestClient transport; plain httpx there is deprecated.
+    "httpx2>=2",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["nova*"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
