@@ -19,6 +19,7 @@ class Outcome(StrEnum):
     RAN = "ran"  # allowed without asking
     APPROVED = "approved"  # the user confirmed
     DECLINED = "declined"  # the user cancelled, or did not answer in time
+    BLOCKED = "blocked"  # refused outright: too risky after reading untrusted content
     REJECTED = "rejected"  # unknown tool or invalid arguments; never reached the gate
 
 
@@ -34,11 +35,21 @@ class ActionLog:
         outcome: Outcome,
         ok: bool,
         result: str,
+        summary: str | None = None,
     ) -> None:
         self._db.run(
-            "INSERT INTO action_log (conversation_id, tool, arguments, decision, ok, result, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (conversation_id, tool, json.dumps(arguments), outcome.value, int(ok), result[:_RESULT_LIMIT], timestamp()),
+            "INSERT INTO action_log (conversation_id, tool, arguments, decision, ok, result, created_at, summary) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                conversation_id,
+                tool,
+                json.dumps(arguments),
+                outcome.value,
+                int(ok),
+                result[:_RESULT_LIMIT],
+                timestamp(),
+                summary,
+            ),
         )
 
     def recent(self, limit: int = 50) -> list[dict[str, Any]]:
@@ -48,6 +59,8 @@ class ActionLog:
                 "id": row["id"],
                 "conversation_id": row["conversation_id"],
                 "tool": row["tool"],
+                # What the user was shown; older rows predate it.
+                "summary": row["summary"] or row["tool"].replace("_", " ").capitalize(),
                 "arguments": json.loads(row["arguments"]),
                 "outcome": row["decision"],
                 "ok": bool(row["ok"]),

@@ -6,6 +6,7 @@ import { type FormEvent, useCallback, useEffect, useRef, useState } from "react"
 
 import { Character, type CharacterKind, type CharacterState } from "@/components/character";
 import { ChipIcon, MicIcon, ReturnIcon, ScreenIcon, StopIcon } from "@/components/icons";
+import { KnownPanel } from "@/components/known-panel";
 import { Transcript } from "@/components/transcript";
 import {
   type VoiceState,
@@ -87,6 +88,8 @@ export default function Launcher() {
   const [voiceNote, setVoiceNote] = useState<string | null>(null);
   // The screen button: the next message is sent with a look at the user's window.
   const [screenArmed, setScreenArmed] = useState(false);
+  // The "Memory & reminders" panel, shown instead of the conversation.
+  const [showKnown, setShowKnown] = useState(false);
 
   const panel = useRef<HTMLElement>(null);
   const field = useRef<HTMLInputElement>(null);
@@ -248,6 +251,7 @@ export default function Launcher() {
       setInput("");
       setCelebrating(false);
       setScreenArmed(false);
+      setShowKnown(false);
       // Typing takes over from talking.
       if (voiceActive) stopVoice();
       agent.send(message, { screen: withScreen || screenArmed });
@@ -264,7 +268,11 @@ export default function Launcher() {
         invoke("hide_launcher").catch(() => {});
       } else if (event.ctrlKey && event.key.toLowerCase() === "n") {
         event.preventDefault();
+        setShowKnown(false);
         startOver();
+      } else if (event.ctrlKey && event.key.toLowerCase() === "m") {
+        event.preventDefault();
+        setShowKnown((shown) => !shown);
       }
     };
     window.addEventListener("keydown", onKey);
@@ -372,7 +380,11 @@ export default function Launcher() {
         </p>
       )}
 
-      {agent.items.length > 0 ? (
+      {showKnown && ready ? (
+        <div className="known-panel min-h-0 flex-1 overflow-y-auto border-t border-line px-4 py-3">
+          <KnownPanel />
+        </div>
+      ) : agent.items.length > 0 ? (
         <div ref={scroller} className="transcript min-h-0 flex-1 overflow-y-auto border-t border-line px-4 py-3">
           <Transcript items={agent.items} onAnswer={answer} onForget={agent.forget} />
         </div>
@@ -417,7 +429,17 @@ export default function Launcher() {
               Say &ldquo;Hey Nova&rdquo;
             </span>
           )}
-          {agent.items.length > 0 && (
+          {ready && (
+            <button
+              type="button"
+              onClick={() => setShowKnown(!showKnown)}
+              aria-pressed={showKnown}
+              className="known-toggle rounded hover:text-text focus-visible:outline-2 focus-visible:outline-accent"
+            >
+              <kbd className="keycap-inline">Ctrl M</kbd> {showKnown ? "Back to chat" : "Memory & reminders"}
+            </button>
+          )}
+          {agent.items.length > 0 && !showKnown && (
             <span>
               <kbd className="keycap-inline">Ctrl N</kbd> New chat
             </span>

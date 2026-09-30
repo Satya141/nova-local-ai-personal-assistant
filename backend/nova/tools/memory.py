@@ -86,6 +86,7 @@ def memory_tools(store: MemoryStore) -> list[Tool]:
             args_model=RecallArgs,
             handler=recall,
             describe=lambda args: f"Look through memories for '{args.query}'",
+            read_only=True,
         ),
         Tool(
             name="forget",

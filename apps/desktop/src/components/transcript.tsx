@@ -9,11 +9,23 @@ const TOOL_OWNERS: Record<string, CharacterKind> = {
   open_application: "ember",
   search_files: "fern",
   open_path: "fern",
+  list_folder: "fern",
+  create_folder: "fern",
+  sort_files: "fern",
+  move_paths: "fern",
+  rename_path: "fern",
+  delete_paths: "plum",
   close_application: "plum",
   create_reminder: "chime",
   list_reminders: "chime",
   cancel_reminder: "chime",
+  schedule_task: "chime",
   look_at_screen: "iris",
+  web_search: "wren",
+  open_web_page: "wren",
+  read_web_page: "wren",
+  click_element: "wren",
+  type_into: "wren",
 };
 
 export function toolOwner(name: string): CharacterKind {
@@ -26,6 +38,7 @@ const TOOL_FACES: Record<ToolState, CharacterState> = {
   ok: "done",
   failed: "error",
   declined: "asleep",
+  blocked: "error",
 };
 
 const TOOL_STATUS: Record<ToolState, string> = {
@@ -34,6 +47,7 @@ const TOOL_STATUS: Record<ToolState, string> = {
   ok: "Done",
   failed: "Did not work",
   declined: "Cancelled",
+  blocked: "Blocked for safety",
 };
 
 function ToolStatus({ state }: { state: ToolState }) {
@@ -43,11 +57,12 @@ function ToolStatus({ state }: { state: ToolState }) {
     ok: "text-ok",
     failed: "text-danger",
     declined: "text-text-muted",
+    blocked: "text-danger",
   }[state];
   return (
     <span className={`ml-auto flex flex-none items-center gap-1 pl-3 text-[11px] font-medium ${tone}`}>
       {state === "running" && <span className="spinner" aria-hidden="true" />}
-      {state === "awaiting" && <ShieldIcon size={12} />}
+      {(state === "awaiting" || state === "blocked") && <ShieldIcon size={12} />}
       {state === "ok" && <CheckIcon size={12} />}
       {(state === "failed" || state === "declined") && <CrossIcon size={12} />}
       {TOOL_STATUS[state]}
@@ -71,11 +86,22 @@ function ToolRow({
     >
       <div className="flex items-center gap-2 text-[13px]">
         <Character kind={toolOwner(item.name)} state={TOOL_FACES[item.state]} size={22} />
-        <span className={`truncate ${item.state === "declined" ? "text-text-muted line-through" : ""}`}>
+        <span
+          className={`truncate ${item.state === "declined" || item.state === "blocked" ? "text-text-muted line-through" : ""}`}
+        >
           {item.summary}
         </span>
         <ToolStatus state={item.state} />
       </div>
+      {awaiting && item.warning && (
+        // Something NOVA read may be behind this request; make the user stop and think.
+        <p role="alert" className="mt-2 flex items-start gap-1.5 rounded-lg bg-danger/10 px-2 py-1.5 text-[12px] text-danger">
+          <span className="mt-0.5">
+            <AlertIcon size={12} />
+          </span>
+          {item.warning}
+        </p>
+      )}
       {awaiting && (
         <div className="mt-2 flex items-center justify-end gap-2 pb-0.5">
           <button

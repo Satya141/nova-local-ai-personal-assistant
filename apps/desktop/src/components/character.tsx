@@ -5,7 +5,7 @@ import { useId } from "react";
  * Nova is the assistant itself; the others each own a kind of action and
  * appear as tiny icons beside it.
  */
-export type CharacterKind = "nova" | "ember" | "fern" | "plum" | "chime" | "iris";
+export type CharacterKind = "nova" | "ember" | "fern" | "plum" | "chime" | "iris" | "wren";
 
 /** Each state has its own face and motion (see character.css). */
 export type CharacterState =
@@ -42,6 +42,7 @@ const NAMES: Record<CharacterKind, string> = {
   plum: "Plum",
   chime: "Chime",
   iris: "Iris",
+  wren: "Wren",
 };
 
 /** Silhouettes, in a 64-unit box with the face centred near (32, 35). */
@@ -54,6 +55,8 @@ const BODIES: Record<CharacterKind, string> = {
   fern: "M32 9.5c1.2 0 2.3.7 3 1.9C39.500 19 51.5 27.200 51.5 39.200c0 10.2-8.5 17.300-19.5 17.300s-19.5-7.100-19.5-17.300C12.500 27.200 24.500 19 29 11.400c.7-1.200 1.800-1.900 3-1.900z",
   // A wide bean that leans to one side.
   plum: "M21.500 17.500c9.500-5.500 23.500-2.500 29 8.500 5.500 11.500-.5 26-13.500 29.500-12 3.200-24-3.800-26.500-15.500-1.900-9 2.400-17.500 11-22.500z",
+  // An egg leaning back, like a bird mid-hop.
+  wren: "M31 13.500c11.800-.5 21.500 9.300 21.500 22 0 11.800-9 20.500-20.500 20.500S11.500 47.300 11.500 36c0-12.200 8.500-22 19.500-22.500z",
   // A soft rounded square, like a little camera.
   iris: "M19.500 15h25c5.800 0 10.500 4.700 10.500 10.500v20c0 5.800-4.700 10.500-10.500 10.500h-25C13.700 56 9 51.300 9 45.500v-20C9 19.700 13.700 15 19.500 15z",
   // A bell: domed crown, flared rim.
@@ -77,6 +80,13 @@ function Accessory({ kind }: { kind: CharacterKind }) {
           <circle className="character-trim" cx="20.500" cy="18.500" r="6" />
           <circle className="character-trim" cx="45.500" cy="19.500" r="6" />
         </>
+      );
+    case "wren": // an antenna, for picking up the web
+      return (
+        <g className="character-antenna">
+          <path className="character-antenna-stalk" d="M38 16.500c1.500-4 3.500-7 6.500-9" />
+          <circle className="character-trim" cx="45.500" cy="6.500" r="3.400" />
+        </g>
       );
     case "iris": // a camera bump on top
       return <rect className="character-trim" x="24.500" y="9" width="15" height="9" rx="3.500" />;

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import Markdown from "react-markdown";
 
 import { Character } from "@/components/character";
 import type { Reminder } from "@/lib/backend";
@@ -19,8 +20,10 @@ function dueLabel(reminder: Reminder, now: Date): string {
   const when = sameDay
     ? clock(due)
     : `${due.toLocaleDateString([], { weekday: "short", day: "numeric", month: "short" })}, ${clock(due)}`;
-  if (now.getTime() - due.getTime() > MISSED_AFTER_MS) return `Missed · was due ${when}`;
-  return reminder.repeat === "none" ? `Reminder · ${when}` : `Reminder · ${when} · repeats ${reminder.repeat}`;
+  const kind = reminder.task ? "Scheduled task" : "Reminder";
+  // A task's card comes when its work is done, so being late is not "missed".
+  if (!reminder.task && now.getTime() - due.getTime() > MISSED_AFTER_MS) return `Missed · was due ${when}`;
+  return reminder.repeat === "none" ? `${kind} · ${when}` : `${kind} · ${when} · repeats ${reminder.repeat}`;
 }
 
 export function ReminderCard({
@@ -46,14 +49,22 @@ export function ReminderCard({
           {dueLabel(reminder, new Date())}
         </p>
         <p className="selectable mt-0.5 text-[15px] font-medium leading-snug">{reminder.text}</p>
+        {reminder.task && reminder.result && (
+          // Markdown like the launcher's replies; a link opens in the user's browser (the shell sees to that).
+          <div className="markdown selectable mt-1 max-h-48 overflow-y-auto text-[13px] leading-relaxed text-text-muted">
+            <Markdown>{reminder.result}</Markdown>
+          </div>
+        )}
         <div className="mt-2.5 flex gap-2">
-          <button
-            type="button"
-            onClick={() => onSnooze(reminder.id)}
-            className="rounded-lg border border-line bg-surface-raised px-3 py-1 text-[12px] font-medium hover:border-accent focus-visible:outline-2 focus-visible:outline-accent"
-          >
-            Snooze {SNOOZE_MINUTES} min
-          </button>
+          {!reminder.task && (
+            <button
+              type="button"
+              onClick={() => onSnooze(reminder.id)}
+              className="rounded-lg border border-line bg-surface-raised px-3 py-1 text-[12px] font-medium hover:border-accent focus-visible:outline-2 focus-visible:outline-accent"
+            >
+              Snooze {SNOOZE_MINUTES} min
+            </button>
+          )}
           <button
             type="button"
             onClick={() => onDone(reminder.id)}

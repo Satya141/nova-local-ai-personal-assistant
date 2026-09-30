@@ -14,6 +14,8 @@ dependencies = [
     "piper-tts>=1.8,<2",
     # Screen understanding (Phase 4)
     "pillow>=12",
+    # Web actions (Phase 5): drives the installed Microsoft Edge, so no browser download.
+    "playwright>=1.63,<2",
 ]
 
 [project.optional-dependencies]

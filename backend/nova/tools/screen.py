@@ -31,5 +31,8 @@ def screen_tools(reader: ScreenReader) -> list[Tool]:
             # Screens show private things; the model alone must never decide to look.
             risk=Risk.MEDIUM,
             requires_confirmation=True,
+            read_only=True,
+            # What is on screen can include text written to steer NOVA.
+            reads_untrusted=True,
         )
     ]

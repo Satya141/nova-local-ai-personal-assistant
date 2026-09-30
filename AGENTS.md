@@ -17,6 +17,7 @@ backend/                 Python 3.12, FastAPI. All agent logic lives here.
   nova/scheduler/        reminders and the loop that fires them
   nova/voice/            microphone, voice activity, wake phrase + Whisper, Piper, the voice service
   nova/vision/           capturing the user's window and asking the vision model about it
+  nova/browser/          NOVA's own Edge window (Playwright), page reading and search
   nova/settings.py       persistent user settings (e.g. wake word on/off)
   nova/api/              HTTP API (token-protected, loopback only) and the event stream
   nova/database.py       the SQLite file and its migrations
@@ -28,7 +29,7 @@ backend/                 Python 3.12, FastAPI. All agent logic lives here.
 apps/desktop/            Tauri 2 shell + Next.js 16 UI. A thin client.
   src-tauri/src/         tray, global shortcut, launcher and reminder windows, backend supervisor
   src/app/               launcher page, /toast reminder window, /gallery design reference
-  src/components/        characters, icons, transcript, reminder card
+  src/components/        characters, icons, transcript, reminder card, memory & reminders panel
   src/lib/               backend client and the conversation state hook
 scripts/setup.ps1        one-time dev setup
 ```
@@ -39,7 +40,7 @@ scripts/setup.ps1        one-time dev setup
 |---|---|
 | First-time setup | `powershell -ExecutionPolicy Bypass -File scripts\setup.ps1` |
 | Run the app (dev) | `pnpm --dir apps/desktop tauri dev` |
-| Backend tests | `cd backend; .venv\Scripts\python -m pytest` |
+| Backend tests (the browser tests drive a hidden Edge against a local site) | `cd backend; .venv\Scripts\python -m pytest` |
 | Agent evals (real model, ~2 min) | `cd backend; .venv\Scripts\python -m evals.run` |
 | Memory extraction evals | `cd backend; .venv\Scripts\python -m evals.run --memory` |
 | Voice pipeline evals (real models, synthetic speech) | `cd backend; .venv\Scripts\python -m evals.voice` |
@@ -64,21 +65,27 @@ Run the evals after any change to a prompt, a tool description, the memory pipel
 9. **No hard-coded model names** outside `backend/nova/config.py`. Everything model-specific goes behind `ModelProvider` or `Embedder`.
 10. **The screen is looked at only on request.** The screen button (a click is consent) or a confirmed `look_at_screen` call; never on the model's own initiative, never continuously, and screenshots are never stored. Capture targets the user's window, never NOVA's own.
 11. **The microphone is opt-in and visible.** It opens only while "Hey Nova" is switched on or for one mic-button command, and whenever it is open the tray icon and the launcher say so. Audio never touches disk or the network, and speech without the wake phrase is dropped. Voice models load with `local_files_only=True`.
-12. **Schema changes are new migrations.** Append to `MIGRATIONS` in `nova/database.py`; never edit one that has shipped.
-13. **No secrets in source.** Credentials come from environment variables.
-14. **Tests accompany behaviour changes.** New tools need tests for their matching and refusal logic; anything touching the gate needs an agent-loop test.
+12. **Outside content cannot drive actions.** Tools that return web pages, search results or the screen set `reads_untrusted`; after one runs, the gate makes every non-`read_only` tool ask with a warning and blocks `HIGH` risk ones for the rest of the request, and a `url_arg` address not found in the user's words or what NOVA read asks first. This is code, not prompt: with only a prompt rule, qwen3 obeyed a page telling it to delete files 3/3. Keep new tools' `read_only` and `reads_untrusted` flags truthful.
+13. **The browser stays separate and visible.** Its own signed-out profile, never the user's; only http and https (`safe_url`); never sign in, enter credentials, or solve a "are you a person" check. Report the check to the user instead.
+14. **File changes are reversible and contained.** Paths must be inside the home folder and outside AppData; standard folders cannot be moved or deleted; moves never overwrite; deletion goes to the Recycle Bin only. Do not add a permanent delete.
+15. **Unattended runs never act on consent.** A scheduled task runs with `unattended=True`: anything the gate would ask about is declined, not approved. Setting a task up is what the user confirms.
+16. **Keep tool results small.** Ollama silently cuts an oversized prompt from the front, question included. Return what the model needs (see `compact_page`), keep bulky data out of `content` (`ToolResult.vouches` exists for addresses), and leave `fit_context` in the loop.
+17. **Schema changes are new migrations.** Append to `MIGRATIONS` in `nova/database.py`; never edit one that has shipped.
+18. **No secrets in source.** Credentials come from environment variables.
+19. **Windows stay on NOVA's pages.** The shell's navigation guard opens web links in the user's browser; do not remove it or load remote content into a NOVA window.
+20. **Tests accompany behaviour changes.** New tools need tests for their matching and refusal logic; anything touching the gate needs an agent-loop test.
 
 ## Adding a tool
 
 1. Write a Pydantic args model, an async handler returning `ToolResult`, and a `Tool(...)` in `backend/nova/tools/`. Tools that need a store are built by a factory function (see `tools/memory.py`).
-2. Set `risk` and `requires_confirmation` truthfully. Deleting, sending, closing, buying: confirm.
+2. Set `risk` and `requires_confirmation` truthfully. Deleting, sending, closing, buying: confirm. Set `read_only` if it changes nothing, `reads_untrusted` if its result contains outside content, `url_arg` if it opens an address, and `confirm_when` for tools that are safe only for some arguments (see `click_element`).
 3. Register it in `build_registry()` in `backend/nova/tools/__init__.py`.
 4. Give it a character in `TOOL_OWNERS` in `apps/desktop/src/components/transcript.tsx` (or leave it to Nova).
 5. Add tests, add an eval scenario with a sandboxed stand-in if it touches the computer, then try it for real through the launcher.
 
 ## The characters
 
-Nova (the assistant and its memory), Ember (apps), Fern (files), Plum (closing things), Chime (reminders) and Iris (the screen) are NOVA's own designs.
+Nova (the assistant and its memory), Ember (apps), Fern (files), Plum (closing and deleting things), Chime (reminders), Iris (the screen) and Wren (the web) are NOVA's own designs.
 A character keeps its colour in every state; status is shown by its face, motion and a small mark.
 All visuals are in `apps/desktop/src/app/character.css`. Check changes on `/gallery` in both light and dark themes, and keep the `prefers-reduced-motion` block working.
 
@@ -92,4 +99,4 @@ Processes started from inside a sandboxed (MSIX-packaged) host see a private cop
 
 ## Current scope
 
-Phases 1 to 4 are done. Not built yet: integrations such as Gmail, Calendar, GitHub and browser automation (5), mobile (6), sync (7), distributed inference (8), the life timeline (9). Scheduled agent tasks ("every morning, summarise my email") wait for Phase 5, when there is something for them to do. A trained wake-word model could replace the speech-recognition wake check later; `Transcriber.find_wake` is the seam. Do not start those without being asked, and do not add abstractions for them in advance.
+Phases 1 to 4 are done, and so are the web, file and scheduled-task parts of Phase 5. Not built yet: the account integrations Gmail, Calendar and GitHub (the rest of 5, which needs the user's sign-in), mobile (6), sync (7), distributed inference (8), the life timeline (9). A trained wake-word model could replace the speech-recognition wake check later; `Transcriber.find_wake` is the seam. Do not start those without being asked, and do not add abstractions for them in advance.

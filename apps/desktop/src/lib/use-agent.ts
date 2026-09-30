@@ -13,12 +13,21 @@ import {
   speak,
 } from "@/lib/backend";
 
-export type ToolState = "running" | "awaiting" | "ok" | "failed" | "declined";
+export type ToolState = "running" | "awaiting" | "ok" | "failed" | "declined" | "blocked";
 
 export type Item =
   | { kind: "user"; key: number; text: string; spoken?: boolean }
   | { kind: "assistant"; key: number; text: string }
-  | { kind: "tool"; key: number; callId: string; name: string; summary: string; state: ToolState; risk?: Risk }
+  | {
+      kind: "tool";
+      key: number;
+      callId: string;
+      name: string;
+      summary: string;
+      state: ToolState;
+      risk?: Risk;
+      warning?: string;
+    }
   | { kind: "error"; key: number; text: string }
   // NOVA noticed a lasting fact and saved it; the user can take it back.
   | { kind: "memory"; key: number; memoryId: number; content: string; forgotten: boolean };
@@ -115,7 +124,7 @@ function reduce(state: AgentState, action: Action): AgentState {
           return {
             ...state,
             phase: "confirm",
-            items: updateTool(state.items, event.id, () => ({ state: "awaiting", risk: event.risk })),
+            items: updateTool(state.items, event.id, () => ({ state: "awaiting", risk: event.risk, warning: event.warning })),
           };
         case "tool_result":
           return {
@@ -124,7 +133,7 @@ function reduce(state: AgentState, action: Action): AgentState {
             phase: "thinking",
             items: updateTool(state.items, event.id, (item) =>
               // A declined call also comes back as not-ok; keep showing it as the user's choice.
-              item.state === "declined" ? {} : { state: event.ok ? "ok" : "failed" },
+              item.state === "declined" ? {} : { state: event.blocked ? "blocked" : event.ok ? "ok" : "failed" },
             ),
           };
         case "error":

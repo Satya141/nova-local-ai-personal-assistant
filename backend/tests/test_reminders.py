@@ -9,7 +9,7 @@ import pytest
 from nova.events import EventBus
 from nova.scheduler import ReminderStore, Scheduler, next_occurrence
 from nova.scheduler.reminders import first_occurrence
-from nova.tools.reminders import CreateReminderArgs, ReminderIdArgs, friendly_time, reminder_tools
+from nova.tools.reminders import CreateReminderArgs, ReminderIdArgs, ScheduleTaskArgs, friendly_time, reminder_tools
 
 NOW = datetime(2026, 9, 30, 12, 0, tzinfo=UTC)
 
@@ -111,6 +111,91 @@ async def test_scheduler_publishes_to_subscribers_and_wakes_on_poke(reminders, b
     assert event["reminder"]["text"] == "Right now"
 
 
+# --- scheduled tasks -------------------------------------------------------------
+
+
+async def test_a_due_task_runs_and_its_card_shows_the_result(reminders, bus, clock):
+    ran: list[str] = []
+
+    async def run_task(request: str) -> str:
+        ran.append(request)
+        return "Three stories: ..."
+
+    task = reminders.create("AI news", NOW, repeat="daily", task="Summarise today's AI news")
+    scheduler = Scheduler(reminders, bus, clock, run_task=run_task)
+    async with bus.subscribe() as queue:
+        [fired] = scheduler.fire_due()
+        assert not fired.pending_ack, "no card until the result is ready"
+        assert reminders.pending() == []
+        await scheduler.wait_for_tasks()
+        event = queue.get_nowait()
+
+    assert ran == ["Summarise today's AI news"]
+    assert event["type"] == "reminder"
+    assert event["reminder"]["task"] == "Summarise today's AI news"
+    assert event["reminder"]["result"] == "Three stories: ..."
+    assert [r.id for r in reminders.pending()] == [task.id]
+    assert reminders.get(task.id).due_at > NOW, "a daily task moves on to tomorrow"
+
+
+async def test_a_failing_task_still_reports(reminders, bus, clock):
+    async def run_task(request: str) -> str:
+        raise RuntimeError("model crashed")
+
+    task = reminders.create("News", NOW, task="Summarise the news")
+    scheduler = Scheduler(reminders, bus, clock, run_task=run_task)
+    scheduler.fire_due()
+    await scheduler.wait_for_tasks()
+    assert "model crashed" in reminders.get(task.id).result
+    assert reminders.get(task.id).pending_ack
+
+
+async def test_a_task_still_running_is_not_started_twice(reminders, bus, clock):
+    release = asyncio.Event()
+    runs: list[str] = []
+
+    async def run_task(request: str) -> str:
+        runs.append(request)
+        await release.wait()
+        return "done"
+
+    reminders.create("Ping", NOW, repeat="daily", task="Check the site")
+    scheduler = Scheduler(reminders, bus, clock, run_task=run_task)
+    scheduler.fire_due()
+    await asyncio.sleep(0)
+    clock.now += timedelta(days=1)
+    scheduler.fire_due()
+    await asyncio.sleep(0)
+    release.set()
+    await scheduler.wait_for_tasks()
+    assert runs == ["Check the site"]
+
+
+def test_a_database_from_before_tasks_upgrades(tmp_path):
+    """Version 3 databases gain the task columns; existing reminders stay plain reminders."""
+    import sqlite3
+
+    from nova.database import MIGRATIONS, Database
+
+    path = tmp_path / "old.db"
+    raw = sqlite3.connect(path)
+    for script in MIGRATIONS[:3]:
+        raw.executescript(script)
+    raw.execute(
+        "INSERT INTO reminders (text, due_at, repeat, status, created_at) VALUES ('Old', '2026-10-01T00:00:00Z', 'none', 'active', '2026-09-30T00:00:00Z')"
+    )
+    raw.execute("PRAGMA user_version = 3")
+    raw.commit()
+    raw.close()
+
+    db = Database(path)
+    try:
+        [old] = ReminderStore(db).upcoming()
+        assert old.text == "Old" and old.task is None and old.result is None
+    finally:
+        db.close()
+
+
 # --- tools ---------------------------------------------------------------------
 
 
@@ -192,6 +277,28 @@ async def test_list_and_cancel_tools(tools, reminders):
     assert tools["cancel_reminder"].describe(ReminderIdArgs(reminder_id=reminder.id)) == "Cancel reminder: Gym"
     assert (await tools["cancel_reminder"].handler(ReminderIdArgs(reminder_id=reminder.id))).ok
     assert reminders.upcoming() == []
+
+
+async def test_schedule_task_tool(tools, reminders, clock):
+    local_eight = (NOW.astimezone() + timedelta(days=1)).replace(hour=8, minute=0, second=0, microsecond=0)
+    args = ScheduleTaskArgs(
+        text="AI news", task="Summarise today's AI news", at=local_eight.replace(tzinfo=None).isoformat(), repeat="daily"
+    )
+    tool = tools["schedule_task"]
+    assert tool.requires_confirmation, "standing automation is confirmed once, when it is set up"
+    assert tool.describe(args) == "Every day at 8:00 AM: Summarise today's AI news"
+
+    result = json.loads((await tool.handler(args)).content)
+
+    assert result["task"] == "Summarise today's AI news"
+    [task] = reminders.upcoming()
+    assert (task.text, task.task, task.repeat) == ("AI news", "Summarise today's AI news", "daily")
+    listing = json.loads((await tools["list_reminders"].handler(tools["list_reminders"].args_model())).content)
+    assert listing["reminders"][0]["task"] == "Summarise today's AI news"
+
+    once = ScheduleTaskArgs(text="Price", task="Check the kettle price", in_minutes=30)
+    when = friendly_time(NOW + timedelta(minutes=30), NOW)
+    assert tool.describe(once) == f"{when[0].upper()}{when[1:]}: Check the kettle price"
 
 
 def test_friendly_time():

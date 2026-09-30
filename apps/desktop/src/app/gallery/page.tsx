@@ -14,7 +14,7 @@ import type { Item } from "@/lib/use-agent";
  * `pnpm dev` runs.
  */
 
-const KINDS: CharacterKind[] = ["nova", "ember", "fern", "plum", "chime", "iris"];
+const KINDS: CharacterKind[] = ["nova", "ember", "fern", "plum", "chime", "iris", "wren"];
 const STATES: CharacterState[] = [
   "idle", "listening", "hearing", "thinking", "working", "speaking", "confirm", "done", "error", "asleep", "ringing",
 ];
@@ -28,6 +28,19 @@ const SAMPLE: Item[] = [
   { kind: "tool", key: 5, callId: "e", name: "close_application", summary: "Close Paint. Unsaved work in it could be lost.", state: "declined" },
   { kind: "tool", key: 6, callId: "f", name: "create_reminder", summary: "Remind you tomorrow at 10:00 AM: Review the budget", state: "ok" },
   { kind: "tool", key: 11, callId: "g", name: "look_at_screen", summary: "Look at your screen", state: "running" },
+  { kind: "tool", key: 12, callId: "h", name: "open_web_page", summary: "Open example-blog.com/tidy-desktop", state: "ok" },
+  { kind: "tool", key: 13, callId: "i", name: "delete_paths", summary: "Send 3 items (a.pdf, b.pdf, ...) to the Recycle Bin", state: "blocked" },
+  {
+    kind: "tool",
+    key: 14,
+    callId: "j",
+    name: "move_paths",
+    summary: "Move invoice-1.pdf and invoice-2.pdf to C:\\Users\\you\\Documents\\Invoices",
+    state: "awaiting",
+    risk: "medium",
+    warning:
+      "NOVA read a web page or your screen during this request, and that content could contain hidden instructions. Only confirm if this is what you asked for.",
+  },
   { kind: "assistant", key: 7, text: "Calculator is open. I found **2 files** that look like your resume:\n\n1. `Resume 2026.pdf` in Documents\n2. `resume-final.docx` in Downloads\n\nWhich one should I open?" },
   { kind: "memory", key: 8, memoryId: 1, content: "The user has a Cognizant interview on Friday 9 October 2026.", forgotten: false },
   { kind: "memory", key: 9, memoryId: 2, content: "The user prefers short answers.", forgotten: true },
@@ -37,10 +50,24 @@ const SAMPLE: Item[] = [
 // Built after mount: times depend on the clock and locale, which differ between the prerender and the webview.
 function sampleReminders(): Reminder[] {
   const minutesAgo = (minutes: number) => new Date(Date.now() - minutes * 60_000).toISOString();
+  const plain = { task: null, result: null };
   return [
-    { id: 1, text: "Call mom", due_at: minutesAgo(0), repeat: "none", status: "done", pending_ack: true, fired_at: minutesAgo(0) },
-    { id: 2, text: "Stand up and stretch", due_at: minutesAgo(-1440), repeat: "weekdays", status: "active", pending_ack: true, fired_at: minutesAgo(0) },
-    { id: 3, text: "Submit the assignment", due_at: minutesAgo(95), repeat: "none", status: "done", pending_ack: true, fired_at: minutesAgo(95) },
+    { id: 1, text: "Call mom", due_at: minutesAgo(0), repeat: "none", status: "done", pending_ack: true, fired_at: minutesAgo(0), ...plain },
+    { id: 2, text: "Stand up and stretch", due_at: minutesAgo(-1440), repeat: "weekdays", status: "active", pending_ack: true, fired_at: minutesAgo(0), ...plain },
+    { id: 3, text: "Submit the assignment", due_at: minutesAgo(95), repeat: "none", status: "done", pending_ack: true, fired_at: minutesAgo(95), ...plain },
+    {
+      id: 4,
+      text: "AI news",
+      due_at: minutesAgo(-1440),
+      repeat: "daily",
+      status: "active",
+      pending_ack: true,
+      fired_at: minutesAgo(1),
+      task: "Search the web for today's AI news and summarise the top stories",
+      result:
+        "Three stories stood out today: a new open-weights model topped a coding benchmark, a chip maker announced a " +
+        "laptop NPU, and a study found small local models close the gap on everyday tasks. Sources: two tech sites.",
+    },
   ];
 }
 

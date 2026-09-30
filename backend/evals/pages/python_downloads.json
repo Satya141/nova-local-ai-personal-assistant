@@ -1,0 +1,647 @@
+{
+ "title": "Python Release Python 3.14.7 | Python.org",
+ "url": "https://www.python.org/downloads/release/python-3147/",
+ "text": "Python 3.14.7\n\nRelease date: Aug. 5, 2026\n\nThis is the seventh maintenance release of Python 3.14\n\nPython 3.14.7 is the seventh maintenance release of 3.14, containing around 499 bugfixes, build improvements and documentation changes from 86 contributors since 3.14.6.\n\nMajor new features of the 3.14 series, compared to 3.13\n\nSome of the major new features and changes in Python 3.14 are:\n\nNew features\nPEP 779: Free-threaded Python is officially supported\nPEP 649: The evaluation of annotations is now deferred, improving the semantics of using annotations.\nPEP 750: Template string literals (t-strings) for custom string processing, using the familiar syntax of f-strings.\nPEP 734: Multiple interpreters in the stdlib.\nPEP 784: A new module compression.zstd providing support for the Zstandard compression algorithm.\nPEP 758: except and except* expressions may now omit the brackets.\nSyntax highlighting in PyREPL, and support for color in unittest, argparse, json and calendar CLIs.\nPEP 768: A zero-overhead external debugger interface for CPython.\nUUID versions 6-8 are now supported by the uuid module, and generation of versions 3-5 are up to 40% faster.\nPEP 765: Disallow return/break/continue that exit a finally block.\nPEP 741: An improved C API for configuring Python.\nA new type of interpreter. For certain newer compilers, this interpreter provides significantly better performance. Opt-in for now, requires building from source.\nImproved error messages.\nBuiltin implementation of HMAC with formally verified code from the HACL* project.\nA new command-line interface to inspect running Python processes using asynchronous tasks.\nThe pdb module now supports remote attaching to a running Python process.\n\nFor more details on the changes to Python 3.14, see What’s new in Python 3.14.\n\nBuild changes\nPEP 761: Python 3.14 and onwards no longer provides PGP signatures for release artifacts. Instead, Sigstore is recommended for verifiers.\nOfficial macOS and Windows release binaries include an experimental JIT compiler.\nOfficial Android binary releases are now available.\nIncompatible changes, removals and new deprecations\nIncompatible changes\nPython removals and deprecations\nC API removals and deprecations\nOverview of all pending deprecations\nPython install manager\n\nThe installer we offer for Windows is being replaced by our new install manager, which can be installed from the Windows Store or from its download page. See our documentation for more information. The JSON file available for download contains the list of all the installable packages available as part of this release, including file URLs and hashes, but is not required to install the latest release. The traditional installer will remain available throughout the 3.14 and 3.15 releases.\n\nMore resources\nOnline documentation\nPEP 745, 3.14 Release Schedule\nReport bugs at github.com/python/cpython/issues\nHelp fund Python directly (or via GitHub Sponsors) and support the Python community\nAnd now for something comple ...",
+ "elements": [
+  {
+   "id": 1,
+   "tag": "a",
+   "type": "",
+   "role": "",
+   "label": "Skip to content",
+   "href": "https://www.python.org/downloads/release/python-3147/#content"
+  },
+  {
+   "id": 2,
+   "tag": "a",
+   "type": "",
+   "role": "",
+   "label": "Python",
+   "href": "https://www.python.org/"
+  },
+  {
+   "id": 3,
+   "tag": "a",
+   "type": "",
+   "role": "",
+   "label": "PSF",
+   "href": "https://www.python.org/psf/"
+  },
+  {
+   "id": 4,
+   "tag": "a",
+   "type": "",
+   "role": "",
+   "label": "Docs",
+   "href": "https://docs.python.org/"
+  },
+  {
+   "id": 5,
+   "tag": "a",
+   "type": "",
+   "role": "",
+   "label": "PyPI",
+   "href": "https://pypi.org/"
+  },
+  {
+   "id": 6,
+   "tag": "a",
+   "type": "",
+   "role": "",
+   "label": "Jobs",
+   "href": "https://www.python.org/jobs/"
+  },
+  {
+   "id": 7,
+   "tag": "a",
+   "type": "",
+   "role": "",
+   "label": "Community",
+   "href": "https://www.python.org/community/"
+  },
+  {
+   "id": 8,
+   "tag": "a",
+   "type": "",
+   "role": "",
+   "label": "",
+   "href": "https://www.python.org/"
+  },
+  {
+   "id": 9,
+   "tag": "a",
+   "type": "",
+   "role": "",
+   "label": "Donate",
+   "href": "https://donate.python.org/"
+  },
+  {
+   "id": 10,
+   "tag": "input",
+   "type": "search",
+   "role": "",
+   "label": "Search",
+   "href": null
+  },
+  {
+   "id": 11,
+   "tag": "button",
+   "type": "submit",
+   "role": "",
+   "label": "GO",
+   "href": null
+  },
+  {
+   "id": 12,
+   "tag": "a",
+   "type": "",
+   "role": "",
+   "label": "Socialize",
+   "href": "https://www.python.org/downloads/release/python-3147/#"
+  },
+  {
+   "id": 13,
+   "tag": "a",
+   "type": "",
+   "role": "",
+   "label": "About",
+   "href": "https://www.python.org/about/"
+  },
+  {
+   "id": 14,
+   "tag": "a",
+   "type": "",
+   "role": "",
+   "label": "Downloads",
+   "href": "https://www.python.org/downloads/"
+  },
+  {
+   "id": 15,
+   "tag": "a",
+   "type": "",
+   "role": "",
+   "label": "Documentation",
+   "href": "https://www.python.org/doc/"
+  },
+  {
+   "id": 16,
+   "tag": "a",
+   "type": "",
+   "role": "",
+   "label": "Community",
+   "href": "https://www.python.org/community/"
+  },
+  {
+   "id": 17,
+   "tag": "a",
+   "type": "",
+   "role": "",
+   "label": "Success Stories",
+   "href": "https://www.python.org/success-stories/"
+  },
+  {
+   "id": 18,
+   "tag": "a",
+   "type": "",
+   "role": "",
+   "label": "News",
+   "href": "https://www.python.org/blogs/"
+  },
+  {
+   "id": 19,
+   "tag": "a",
+   "type": "",
+   "role": "",
+   "label": "Events",
+   "href": "https://www.python.org/events/"
+  },
+  {
+   "id": 20,
+   "tag": "a",
+   "type": "",
+   "role": "",
+   "label": "PEP 779",
+   "href": "https://docs.python.org/3/whatsnew/3.14.html#whatsnew314-free-threaded-now-supported"
+  },
+  {
+   "id": 21,
+   "tag": "a",
+   "type": "",
+   "role": "",
+   "label": "PEP 649",
+   "href": "https://docs.python.org/3/whatsnew/3.14.html#whatsnew314-deferred-annotations"
+  },
+  {
+   "id": 22,
+   "tag": "a",
+   "type": "",
+   "role": "",
+   "label": "PEP 750",
+   "href": "https://docs.python.org/3/whatsnew/3.14.html#pep-750-template-string-literals"
+  },
+  {
+   "id": 23,
+   "tag": "a",
+   "type": "",
+   "role": "",
+   "label": "PEP 734",
+   "href": "https://docs.python.org/3/whatsnew/3.14.html#pep-734-multiple-interpreters-in-the-standard-library"
+  },
+  {
+   "id": 24,
+   "tag": "a",
+   "type": "",
+   "role": "",
+   "label": "PEP 784",
+   "href": "https://docs.python.org/3/whatsnew/3.14.html#pep-784-zstandard-support-in-the-standard-library"
+  },
+  {
+   "id": 25,
+   "tag": "a",
+   "type": "",
+   "role": "",
+   "label": "PEP 758",
+   "href": "https://docs.python.org/3/whatsnew/3.14.html#pep-758-allow-except-and-except-expressions-without-brackets"
+  },
+  {
+   "id": 26,
+   "tag": "a",
+   "type": "",
+   "role": "",
+   "label": "Syntax highlighting in PyREPL",
+   "href": "https://docs.python.org/3/whatsnew/3.14.html#whatsnew314-pyrepl-highlighting"
+  },
+  {
+   "id": 27,
+   "tag": "a",
+   "type": "",
+   "role": "",
+   "label": "unittest",
+   "href": "https://docs.python.org/3/whatsnew/3.14.html#whatsnew314-color-unittest"
+  },
+  {
+   "id": 28,
+   "tag": "a",
+   "type": "",
+   "role": "",
+   "label": "argparse",
+   "href": "https://docs.python.org/3/whatsnew/3.14.html#whatsnew314-color-argparse"
+  },
+  {
+   "id": 29,
+   "tag": "a",
+   "type": "",
+   "role": "",
+   "label": "json",
+   "href": "https://docs.python.org/3/whatsnew/3.14.html#whatsnew314-color-json"
+  },
+  {
+   "id": 30,
+   "tag": "a",
+   "type": "",
+   "role": "",
+   "label": "calendar",
+   "href": "https://docs.python.org/3/whatsnew/3.14.html#whatsnew314-color-calendar"
+  },
+  {
+   "id": 31,
+   "tag": "a",
+   "type": "",
+   "role": "",
+   "label": "PEP 768",
+   "href": "https://docs.python.org/3/whatsnew/3.14.html#pep-768-safe-external-debugger-interface"
+  },
+  {
+   "id": 32,
+   "tag": "a",
+   "type": "",
+   "role": "",
+   "label": "UUID versions 6-8",
+   "href": "https://docs.python.org/3/whatsnew/3.14.html#uuid"
+  },
+  {
+   "id": 33,
+   "tag": "a",
+   "type": "",
+   "role": "",
+   "label": "PEP 765",
+   "href": "https://docs.python.org/3/whatsnew/3.14.html#pep-765-control-flow-in-finally-blocks"
+  },
+  {
+   "id": 34,
+   "tag": "a",
+   "type": "",
+   "role": "",
+   "label": "PEP 741",
+   "href": "https://docs.python.org/3/whatsnew/3.14.html#whatsnew314-capi-config"
+  },
+  {
+   "id": 35,
+   "tag": "a",
+   "type": "",
+   "role": "",
+   "label": "new type of interpreter",
+   "href": "https://docs.python.org/3/whatsnew/3.14.html#whatsnew314-tail-call-interpreter"
+  },
+  {
+   "id": 36,
+   "tag": "a",
+   "type": "",
+   "role": "",
+   "label": "Improved error messages.",
+   "href": "https://docs.python.org/3/whatsnew/3.14.html#improved-error-messages"
+  },
+  {
+   "id": 37,
+   "tag": "a",
+   "type": "",
+   "role": "",
+   "label": "Builtin implementation of HMAC",
+   "href": "https://docs.python.org/3/whatsnew/3.14.html#hmac"
+  },
+  {
+   "id": 38,
+   "tag": "a",
+   "type": "",
+   "role": "",
+   "label": "new command-line interface",
+   "href": "https://docs.python.org/3/whatsnew/3.14.html#asyncio-introspection-capabilities"
+  },
+  {
+   "id": 39,
+   "tag": "a",
+   "type": "",
+   "role": "",
+   "label": "remote attaching to a running Python process",
+   "href": "https://docs.python.org/3/whatsnew/3.14.html#pdb"
+  },
+  {
+   "id": 40,
+   "tag": "a",
+   "type": "",
+   "role": "",
+   "label": "What’s new in Python 3.14",
+   "href": "https://docs.python.org/3/whatsnew/3.14.html"
+  },
+  {
+   "id": 41,
+   "tag": "a",
+   "type": "",
+   "role": "",
+   "label": "PEP 761",
+   "href": "https://docs.python.org/3/whatsnew/3.14.html#whatsnew314-no-more-pgp"
+  },
+  {
+   "id": 42,
+   "tag": "a",
+   "type": "",
+   "role": "",
+   "label": "experimental JIT compiler",
+   "href": "https://docs.python.org/3/whatsnew/3.14.html#whatsnew314-jit-compiler"
+  },
+  {
+   "id": 43,
+   "tag": "a",
+   "type": "",
+   "role": "",
+   "label": "Android binary releases",
+   "href": "https://docs.python.org/3/whatsnew/3.14.html#whatsnew314-build-changes"
+  },
+  {
+   "id": 44,
+   "tag": "a",
+   "type": "",
+   "role": "",
+   "label": "Incompatible changes",
+   "href": "https://docs.python.org/3/whatsnew/3.14.html#incompatible-changes"
+  },
+  {
+   "id": 45,
+   "tag": "a",
+   "type": "",
+   "role": "",
+   "label": "removals",
+   "href": "https://docs.python.org/3/whatsnew/3.14.html#removed"
+  },
+  {
+   "id": 46,
+   "tag": "a",
+   "type": "",
+   "role": "",
+   "label": "deprecations",
+   "href": "https://docs.python.org/3/whatsnew/3.14.html#deprecated"
+  },
+  {
+   "id": 47,
+   "tag": "a",
+   "type": "",
+   "role": "",
+   "label": "removals",
+   "href": "https://docs.python.org/3/whatsnew/3.14.html#removed-c-apis"
+  },
+  {
+   "id": 48,
+   "tag": "a",
+   "type": "",
+   "role": "",
+   "label": "deprecations",
+   "href": "https://docs.python.org/3/whatsnew/3.14.html#deprecated-c-apis"
+  },
+  {
+   "id": 49,
+   "tag": "a",
+   "type": "",
+   "role": "",
+   "label": "pending deprecations",
+   "href": "https://docs.python.org/3/deprecations/index.html"
+  },
+  {
+   "id": 50,
+   "tag": "a",
+   "type": "",
+   "role": "",
+   "label": "the Windows Store",
+   "href": "https://apps.microsoft.com/detail/9NQ7512CXL7T"
+  },
+  {
+   "id": 51,
+   "tag": "a",
+   "type": "",
+   "role": "",
+   "label": "download page",
+   "href": "https://www.python.org/downloads/latest/pymanager/"
+  },
+  {
+   "id": 52,
+   "tag": "a",
+   "type": "",
+   "role": "",
+   "label": "our documentation",
+   "href": "https://docs.python.org/3/using/windows.html"
+  },
+  {
+   "id": 53,
+   "tag": "a",
+   "type": "",
+   "role": "",
+   "label": "Online documentation",
+   "href": "https://docs.python.org/3/"
+  },
+  {
+   "id": 54,
+   "tag": "a",
+   "type": "",
+   "role": "",
+   "label": "PEP 745",
+   "href": "https://peps.python.org/pep-0745/"
+  },
+  {
+   "id": 55,
+   "tag": "a",
+   "type": "",
+   "role": "",
+   "label": "github.com/python/cpython/issues",
+   "href": "https://github.com/python/cpython/issues"
+  },
+  {
+   "id": 56,
+   "tag": "a",
+   "type": "",
+   "role": "",
+   "label": "Help fund Python directly",
+   "href": "https://www.python.org/psf/donations/python-dev/"
+  },
+  {
+   "id": 57,
+   "tag": "a",
+   "type": "",
+   "role": "",
+   "label": "GitHub Sponsors",
+   "href": "https://github.com/sponsors/python"
+  },
+  {
+   "id": 58,
+   "tag": "a",
+   "type": "",
+   "role": "",
+   "label": "the Python community",
+   "href": "https://www.python.org/psf/donations/"
+  },
+  {
+   "id": 59,
+   "tag": "a",
+   "type": "",
+   "role": "",
+   "label": "Python Software Foundation",
+   "href": "https://www.python.org/psf-landing/"
+  },
+  {
+   "id": 60,
+   "tag": "a",
+   "type": "",
+   "role": "",
+   "label": "Full Changelog",
+   "href": "https://docs.python.org/release/3.14.7/whatsnew/changelog.html"
+  },
+  {
+   "id": 61,
+   "tag": "a",
+   "type": "",
+   "role": "",
+   "label": "Download macOS installer",
+   "href": "https://www.python.org/ftp/python/3.14.7/python-3.14.7-macos11.pkg"
+  },
+  {
+   "id": 62,
+   "tag": "a",
+   "type": "",
+   "role": "",
+   "label": "Download Python install manager",
+   "href": "https://www.python.org/downloads/latest/pymanager/"
+  },
+  {
+   "id": 63,
+   "tag": "a",
+   "type": "",
+   "role": "",
+   "label": "Download XZ compressed source tarball",
+   "href": "https://www.python.org/ftp/python/3.14.7/Python-3.14.7.tar.xz"
+  },
+  {
+   "id": 64,
+   "tag": "a",
+   "type": "",
+   "role": "",
+   "label": "Sigstore",
+   "href": "https://www.python.org/download/sigstore/"
+  },
+  {
+   "id": 65,
+   "tag": "a",
+   "type": "",
+   "role": "",
+   "label": "SBOM",
+   "href": "https://www.python.org/download/sbom/"
+  },
+  {
+   "id": 66,
+   "tag": "a",
+   "type": "",
+   "role": "",
+   "label": "Gzipped source tarball",
+   "href": "https://www.python.org/ftp/python/3.14.7/Python-3.14.7.tgz"
+  },
+  {
+   "id": 67,
+   "tag": "a",
+   "type": "",
+   "role": "",
+   "label": ".sigstore",
+   "href": "https://www.python.org/ftp/python/3.14.7/Python-3.14.7.tgz.sigstore"
+  },
+  {
+   "id": 68,
+   "tag": "a",
+   "type": "",
+   "role": "",
+   "label": "SPDX",
+   "href": "https://www.python.org/ftp/python/3.14.7/Python-3.14.7.tgz.spdx.json"
+  },
+  {
+   "id": 69,
+   "tag": "a",
+   "type": "",
+   "role": "",
+   "label": "XZ compressed source tarball",
+   "href": "https://www.python.org/ftp/python/3.14.7/Python-3.14.7.tar.xz"
+  },
+  {
+   "id": 70,
+   "tag": "a",
+   "type": "",
+   "role": "",
+   "label": ".sigstore",
+   "href": "https://www.python.org/ftp/python/3.14.7/Python-3.14.7.tar.xz.sigstore"
+  },
+  {
+   "id": 71,
+   "tag": "a",
+   "type": "",
+   "role": "",
+   "label": "SPDX",
+   "href": "https://www.python.org/ftp/python/3.14.7/Python-3.14.7.tar.xz.spdx.json"
+  },
+  {
+   "id": 72,
+   "tag": "a",
+   "type": "",
+   "role": "",
+   "label": "Android embeddable package (aarch64)",
+   "href": "https://www.python.org/ftp/python/3.14.7/python-3.14.7-aarch64-linux-android.tar.gz"
+  },
+  {
+   "id": 73,
+   "tag": "a",
+   "type": "",
+   "role": "",
+   "label": ".sigstore",
+   "href": "https://www.python.org/ftp/python/3.14.7/python-3.14.7-aarch64-linux-android.tar.gz.sigstore"
+  },
+  {
+   "id": 74,
+   "tag": "a",
+   "type": "",
+   "role": "",
+   "label": "Android embeddable package (x86_64)",
+   "href": "https://www.python.org/ftp/python/3.14.7/python-3.14.7-x86_64-linux-android.tar.gz"
+  },
+  {
+   "id": 75,
+   "tag": "a",
+   "type": "",
+   "role": "",
+   "label": ".sigstore",
+   "href": "https://www.python.org/ftp/python/3.14.7/python-3.14.7-x86_64-linux-android.tar.gz.sigstore"
+  },
+  {
+   "id": 76,
+   "tag": "a",
+   "type": "",
+   "role": "",
+   "label": "macOS installer",
+   "href": "https://www.python.org/ftp/python/3.14.7/python-3.14.7-macos11.pkg"
+  },
+  {
+   "id": 77,
+   "tag": "a",
+   "type": "",
+   "role": "",
+   "label": ".sigstore",
+   "href": "https://www.python.org/ftp/python/3.14.7/python-3.14.7-macos11.pkg.sigstore"
+  },
+  {
+   "id": 78,
+   "tag": "a",
+   "type": "",
+   "role": "",
+   "label": "Windows installer (64-bit)",
+   "href": "https://www.python.org/ftp/python/3.14.7/python-3.14.7-amd64.exe"
+  },
+  {
+   "id": 79,
+   "tag": "a",
+   "type": "",
+   "role": "",
+   "label": ".sigstore",
+   "href": "https://www.python.org/ftp/python/3.14.7/python-3.14.7-amd64.exe.sigstore"
+  },
+  {
+   "id": 80,
+   "tag": "a",
+   "type": "",
+   "role": "",
+   "label": "SPDX",
+   "href": "https://www.python.org/ftp/python/3.14.7/python-3.14.7-amd64.exe.spdx.json"
+  }
+ ]
+}

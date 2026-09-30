@@ -34,27 +34,45 @@ def test_registry_exposes_a_schema_for_every_tool(full_registry):
     assert full_registry.names() == [
         "cancel_reminder",
         "close_application",
+        "create_folder",
         "create_reminder",
+        "delete_paths",
         "forget",
+        "list_folder",
         "list_reminders",
+        "move_paths",
         "open_application",
         "open_path",
         "recall",
         "remember",
+        "rename_path",
+        "schedule_task",
         "search_files",
+        "sort_files",
     ]
     for schema in full_registry.schemas():
         function = schema["function"]
         assert schema["type"] == "function"
         assert function["description"]
         assert function["parameters"]["type"] == "object"
-        assert "title" not in function["parameters"]
+        text = json.dumps(function["parameters"])
+        assert '"title"' not in text and "$ref" not in text and "$defs" not in text
+
+
+def test_nested_arguments_are_written_out_in_place(full_registry):
+    groups = full_registry.get("sort_files").schema()["function"]["parameters"]["properties"]["groups"]
+    assert groups["type"] == "array"
+    assert set(groups["items"]["properties"]) == {"into", "files"}
+    assert groups["items"]["required"] == ["into", "files"]
 
 
 def test_only_destructive_tools_need_confirmation(full_registry):
     confirming = [name for name in full_registry.names() if full_registry.get(name).requires_confirmation]
-    assert confirming == ["close_application", "forget"]
-    assert all(full_registry.get(name).risk is Risk.MEDIUM for name in confirming)
+    assert confirming == [
+        "close_application", "delete_paths", "forget", "move_paths", "rename_path", "schedule_task", "sort_files"
+    ]
+    assert full_registry.get("delete_paths").risk is Risk.HIGH
+    assert all(full_registry.get(name).risk is Risk.MEDIUM for name in confirming if name != "delete_paths")
 
 
 async def test_memory_tools(full_registry, memory):
@@ -179,6 +197,33 @@ def test_search_requires_every_word_and_honours_extension(tree):
     assert names(search(tree, "resume", "pdf", 10)) == ["Resume 2024.pdf"]
     assert names(search(tree, "resume", ".PDF", 10)) == ["Resume 2024.pdf"]
     assert names(search(tree, "", "xlsx", 10)) == ["budget 2026.xlsx"]
+
+
+@pytest.mark.parametrize(
+    ("query", "expected"),
+    [
+        ("budget spreadsheet", ["budget 2026.xlsx"]),  # the words people use, not the name
+        ("my budget spreadsheet file", ["budget 2026.xlsx"]),
+        ("resume pdf", ["Resume 2024.pdf"]),
+        ("resume document", ["resume-final.docx", "Resume 2024.pdf"]),
+        ("resume spreadsheet", []),
+    ],
+)
+def test_kind_words_filter_by_type(tree, query, expected):
+    assert names(search(tree, query, None, 10)) == expected
+
+
+@pytest.mark.parametrize("extension", ["all", "*", "*.*", "ANY", ""])
+def test_no_filter_words_mean_no_filter(tree, extension):
+    assert len(search(tree, "resume", extension, 10)["results"]) == 2
+
+
+def test_a_made_up_path_gets_real_suggestions(tree):
+    from nova.tools.files import near_misses
+
+    assert near_misses(tree / "Desktop" / "budget spreadsheet.xlsx") == [str(tree / "Desktop" / "budget 2026.xlsx")]
+    assert near_misses(tree / "Desktop" / "holiday.jpg") == []
+    assert near_misses(tree / "Nowhere" / "budget.xlsx") == []
 
 
 def test_search_finds_folders_and_respects_limit(tree):

@@ -1,4 +1,4 @@
-"""Tools for reminders: create, list and cancel."""
+"""Tools for reminders and scheduled tasks: create, list and cancel."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field, model_validator
 
 from nova.database import utc_now
 from nova.scheduler.reminders import ReminderStore, first_occurrence, next_occurrence
-from nova.tools.base import Tool, ToolResult
+from nova.tools.base import Risk, Tool, ToolResult
 
 # A time a few seconds in the past is "now", not a mistake.
 _GRACE = timedelta(minutes=1)
@@ -65,6 +65,14 @@ class CreateReminderArgs(BaseModel):
         return moment.astimezone(UTC)
 
 
+class ScheduleTaskArgs(CreateReminderArgs):
+    text: str = Field(description="A short title for the result card, e.g. 'AI news' or 'Weather'.")
+    task: str = Field(
+        description="What NOVA should do at that time, as a full request, e.g. 'Search the web for today's "
+        "AI news and summarise the top three stories'."
+    )
+
+
 class ReminderIdArgs(BaseModel):
     reminder_id: int = Field(description="The reminder's id, from list_reminders.")
 
@@ -76,8 +84,7 @@ class NoArgs(BaseModel):
 def reminder_tools(
     store: ReminderStore, on_change: Callable[[], None], clock: Callable[[], datetime] = utc_now
 ) -> list[Tool]:
-    async def create(args: CreateReminderArgs) -> ToolResult:
-        now = clock()
+    def first_due(args: CreateReminderArgs, now: datetime) -> datetime | ToolResult:
         due = args.due(now)
         if due < now - _GRACE:
             if args.repeat == "none":
@@ -92,7 +99,15 @@ def reminder_tools(
             # Near-term dates for repeating reminders are the model's guess; work out the first one here.
             # A start further out ("starting next month") is taken as meant.
             due = first_occurrence(due, args.repeat, now)
-        reminder = store.create(args.text.strip(), max(due, now), args.repeat)
+        return max(due, now)
+
+    async def create(args: CreateReminderArgs) -> ToolResult:
+        now = clock()
+        due = first_due(args, now)
+        if isinstance(due, ToolResult):
+            return due
+        task = args.task.strip() if isinstance(args, ScheduleTaskArgs) else None
+        reminder = store.create(args.text.strip(), due, args.repeat, task=task)
         on_change()
         return ToolResult(
             True,
@@ -103,6 +118,7 @@ def reminder_tools(
                     "when": friendly_time(reminder.due_at, now),
                     "repeat": reminder.repeat,
                 }
+                | ({"task": task, "note": "NOVA will do this then and show the result."} if task else {})
             ),
         )
 
@@ -112,6 +128,16 @@ def reminder_tools(
         repeat = "" if args.repeat == "none" else f", {args.repeat}"
         return f"Remind you {when}{repeat}: {args.text}"
 
+    def describe_schedule(args: ScheduleTaskArgs) -> str:
+        now = clock()
+        due = first_due(args, now)
+        when = friendly_time(due if isinstance(due, datetime) else args.due(now), now)
+        if args.repeat == "none":
+            return f"{when[0].upper()}{when[1:]}: {args.task}"
+        clock_time = when.rsplit(" at ", 1)[-1]
+        every = {"daily": "Every day", "weekdays": "Every weekday", "weekly": "Every week"}[args.repeat]
+        return f"{every} at {clock_time}: {args.task}"
+
     async def list_all(args: NoArgs) -> ToolResult:
         now = clock()
         return ToolResult(
@@ -120,6 +146,7 @@ def reminder_tools(
                 {
                     "reminders": [
                         {"id": r.id, "text": r.text, "when": friendly_time(r.due_at, now), "repeat": r.repeat}
+                        | ({"task": r.task} if r.task else {})
                         for r in store.upcoming()
                     ]
                 }
@@ -146,15 +173,30 @@ def reminder_tools(
             describe=describe_create,
         ),
         Tool(
+            name="schedule_task",
+            description=(
+                "Have NOVA do work by itself later or on a schedule and show the user the result, e.g. "
+                "'every morning at 8, summarise the AI news'. Only for work NOVA can do unattended, like "
+                "searching and reading the web. Not for reminders: 'remind me to ...' is always "
+                "create_reminder, even when it repeats. The user confirms first."
+            ),
+            args_model=ScheduleTaskArgs,
+            handler=create,
+            describe=describe_schedule,
+            risk=Risk.MEDIUM,
+            requires_confirmation=True,
+        ),
+        Tool(
             name="list_reminders",
-            description="List the user's upcoming reminders with their ids.",
+            description="List the user's upcoming reminders and scheduled tasks with their ids.",
             args_model=NoArgs,
             handler=list_all,
             describe=lambda args: "Check your reminders",
+            read_only=True,
         ),
         Tool(
             name="cancel_reminder",
-            description="Cancel one reminder by id. Call list_reminders first to find the id.",
+            description="Cancel one reminder or scheduled task by id. Call list_reminders first to find the id.",
             args_model=ReminderIdArgs,
             handler=cancel,
             describe=describe_cancel,

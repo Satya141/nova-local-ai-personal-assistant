@@ -27,6 +27,9 @@ class ToolResult:
     ok: bool
     # Sent back to the model as the tool's observation.
     content: str
+    # Web addresses this result offered but did not show the model (a page's links), which may
+    # then be opened without a confirmation. See Tool.url_arg.
+    vouches: str = ""
 
 
 @dataclass(frozen=True)
@@ -39,12 +42,20 @@ class Tool:
     describe: Callable[[Any], str]
     risk: Risk = Risk.LOW
     requires_confirmation: bool = False
+    # For tools whose risk depends on the arguments: clicking a plain link is harmless,
+    # clicking "Place order" is not. Decided by code from the arguments, never by the model.
+    confirm_when: Callable[[Any], bool] | None = None
+    # Only looks; changes nothing. Read-only tools stay allowed after untrusted input.
+    read_only: bool = False
+    # Returns content NOVA does not control (web pages, the screen), which may try to give orders.
+    reads_untrusted: bool = False
+    # The argument holding a web address. After untrusted input, an address that neither the user
+    # nor a page NOVA read supplied needs confirming: it could smuggle data out in the URL.
+    url_arg: str | None = None
 
     def schema(self) -> dict[str, Any]:
-        parameters = self.args_model.model_json_schema()
-        parameters.pop("title", None)
-        for prop in parameters.get("properties", {}).values():
-            prop.pop("title", None)
+        raw = self.args_model.model_json_schema()
+        parameters = _plain(raw, raw.get("$defs", {}))
         return {
             "type": "function",
             "function": {
@@ -53,6 +64,24 @@ class Tool:
                 "parameters": parameters,
             },
         }
+
+
+def _plain(node: Any, defs: dict[str, Any]) -> Any:
+    """The schema without titles and with nested models written out in place: small models
+    follow an inline schema far better than "$ref" pointers."""
+    if isinstance(node, list):
+        return [_plain(item, defs) for item in node]
+    if not isinstance(node, dict):
+        return node
+    if "$ref" in node:
+        return _plain(defs[node["$ref"].rsplit("/", 1)[-1]], defs)
+    return {
+        key: (
+            {name: _plain(prop, defs) for name, prop in value.items()} if key == "properties" else _plain(value, defs)
+        )
+        for key, value in node.items()
+        if key not in ("title", "$defs")
+    }
 
 
 class ToolRegistry:

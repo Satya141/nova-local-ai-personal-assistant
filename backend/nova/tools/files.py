@@ -52,11 +52,66 @@ def resolve_folder(folder: str | None, home: Path) -> Path | None:
     return path if path.is_absolute() and path.is_dir() else None
 
 
+# Words people use for a kind of file rather than its name: "the budget spreadsheet" is
+# Budget 2026.xlsx. They filter by type instead of having to appear in the name.
+_KINDS = {
+    "spreadsheet": {".xlsx", ".xls", ".xlsm", ".csv", ".ods"},
+    "excel": {".xlsx", ".xls", ".xlsm"},
+    "pdf": {".pdf"},
+    "document": {".docx", ".doc", ".pdf", ".txt", ".odt", ".rtf", ".md"},
+    "doc": {".docx", ".doc"},
+    "word": {".docx", ".doc"},
+    "presentation": {".pptx", ".ppt", ".odp", ".key"},
+    "slides": {".pptx", ".ppt", ".odp", ".key"},
+    "deck": {".pptx", ".ppt", ".odp", ".key"},
+    "powerpoint": {".pptx", ".ppt"},
+    "photo": {".jpg", ".jpeg", ".png", ".heic", ".webp", ".gif", ".bmp"},
+    "picture": {".jpg", ".jpeg", ".png", ".heic", ".webp", ".gif", ".bmp"},
+    "image": {".jpg", ".jpeg", ".png", ".heic", ".webp", ".gif", ".bmp", ".svg"},
+    "screenshot": {".png", ".jpg", ".jpeg"},
+    "video": {".mp4", ".mov", ".mkv", ".avi", ".webm"},
+    "song": {".mp3", ".m4a", ".wav", ".flac", ".ogg"},
+    "audio": {".mp3", ".m4a", ".wav", ".flac", ".ogg"},
+    "zip": {".zip", ".7z", ".rar"},
+    "archive": {".zip", ".7z", ".rar", ".tar", ".gz"},
+}
+_FILLER = {"my", "the", "a", "an", "file", "files", "of", "for", "latest", "newest", "recent"}
+
+
+def normalize_extension(extension: str | None) -> str | None:
+    """'.PDF' -> 'pdf'. Words the model uses for "no filter" ('all', '*', 'any') mean None:
+    once it passed extension='all' and reported a full folder as empty."""
+    if not extension:
+        return None
+    cleaned = extension.strip().lower().lstrip("*").lstrip(".")
+    return None if cleaned in ("", "*", "all", "any", "none", "every", "everything") else cleaned
+
+
+def parse_query(query: str, extension: str | None) -> tuple[list[str], set[str] | None]:
+    """Name words to match, and the file types allowed (None: any)."""
+    tokens: list[str] = []
+    kinds: set[str] = set()
+    for word in query.lower().replace(",", " ").split():
+        singular = word[:-1] if word.endswith("s") and word[:-1] in _KINDS else word
+        if singular in _KINDS:
+            kinds |= _KINDS[singular]
+        elif word not in _FILLER:
+            tokens.append(word)
+    extension = normalize_extension(extension)
+    if extension:
+        return tokens, {"." + extension}
+    return tokens, kinds or None
+
+
+def name_matches(name: str, is_dir: bool, tokens: list[str], suffixes: set[str] | None) -> bool:
+    name = name.lower()
+    if suffixes is not None and (is_dir or not name.endswith(tuple(suffixes))):
+        return False
+    return all(token in name for token in tokens)
+
+
 def search(root: Path, query: str, extension: str | None, limit: int, budget: float = _SEARCH_SECONDS) -> dict:
-    tokens = query.lower().split()
-    suffix = None
-    if extension and extension.strip():
-        suffix = "." + extension.strip().lower().lstrip(".")
+    tokens, suffixes = parse_query(query, extension)
     deadline = time.monotonic() + budget
     found: list[tuple[float, dict]] = []
     timed_out = False
@@ -81,9 +136,7 @@ def search(root: Path, query: str, extension: str | None, limit: int, budget: fl
                 if name in _SKIP_DIRS or name.startswith("."):
                     continue
                 queue.append(Path(entry.path))
-            if suffix and (is_dir or not name.endswith(suffix)):
-                continue
-            if all(token in name for token in tokens):
+            if name_matches(name, is_dir, tokens, suffixes):
                 try:
                     stat = entry.stat(follow_symlinks=False)
                 except OSError:
@@ -109,7 +162,10 @@ def search(root: Path, query: str, extension: str | None, limit: int, budget: fl
 
 
 class SearchFilesArgs(BaseModel):
-    query: str = Field(description="Words that appear in the file or folder name, e.g. 'resume' or 'budget 2026'.")
+    query: str = Field(
+        description="Words from the file or folder name, e.g. 'resume' or 'budget 2026'. Kind words such as "
+        "'spreadsheet', 'pdf' or 'photo' filter by file type."
+    )
     folder: str | None = Field(
         default=None,
         description="Where to search: 'desktop', 'documents', 'downloads', 'pictures', 'music', 'videos', "
@@ -120,7 +176,7 @@ class SearchFilesArgs(BaseModel):
 
 
 async def _search_files(args: SearchFilesArgs) -> ToolResult:
-    if not args.query.strip() and not args.extension:
+    if not args.query.strip() and not normalize_extension(args.extension):
         return ToolResult(False, "Provide a query or an extension to search for.")
     root = resolve_folder(args.folder, Path.home())
     if root is None:
@@ -133,10 +189,34 @@ class OpenPathArgs(BaseModel):
     path: str = Field(description="Absolute path of the file or folder to open, exactly as returned by search_files.")
 
 
+def near_misses(path: Path, limit: int = 5) -> list[str]:
+    """Real files in the same folder sharing a word with a path that does not exist.
+
+    The model sometimes opens a name it made up from the user's words ("budget spreadsheet.xlsx")
+    instead of the one search_files returned.
+    """
+    words = {w for w in path.stem.lower().replace("-", " ").replace("_", " ").split() if len(w) > 2}
+    try:
+        entries = list(os.scandir(path.parent)) if words and path.parent.is_dir() else []
+    except OSError:
+        return []
+    return [e.path for e in entries if any(w in e.name.lower() for w in words)][:limit]
+
+
+def missing_path(raw: str, guesses: list[str]) -> str:
+    # Once, told only "does not exist", the model still said the file "has been opened".
+    hint = (
+        f" Files that do exist there: {'; '.join(guesses)}. Call open_path again with one of these exact paths."
+        if guesses
+        else " Use search_files to find the right path."
+    )
+    return f"Not opened: '{raw}' does not exist.{hint} Do not tell the user it was opened unless a call succeeds."
+
+
 async def _open_path(args: OpenPathArgs) -> ToolResult:
     path = Path(args.path)
     if not path.is_absolute() or not path.exists():
-        return ToolResult(False, f"'{args.path}' does not exist. Use search_files to find the right path.")
+        return ToolResult(False, missing_path(args.path, near_misses(path) if path.is_absolute() else []))
     if path.is_file() and path.suffix.lower() in _EXECUTABLE_SUFFIXES:
         return ToolResult(
             False,
@@ -155,6 +235,7 @@ search_files = Tool(
     args_model=SearchFilesArgs,
     handler=_search_files,
     describe=lambda args: f"Search files for '{args.query}'" + (f" in {args.folder}" if args.folder else ""),
+    read_only=True,
 )
 
 open_path = Tool(

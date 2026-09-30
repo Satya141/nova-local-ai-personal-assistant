@@ -20,6 +20,7 @@ from pydantic import BaseModel, Field
 
 from nova import __version__
 from nova.agent import Agent
+from nova.browser import BrowserSession
 from nova.config import Settings
 from nova.database import Database, utc_now
 from nova.events import EventBus
@@ -115,6 +116,7 @@ def create_app(settings: Settings, provider: ModelProvider | None = None) -> Fas
                 )
             )
         screen = ScreenReader(vision) if vision else None
+        browser = BrowserSession(settings.data_dir / "browser-profile") if settings.browser else None
         bus = EventBus()
         store = ConversationStore(db)
         memory = MemoryStore(db, embedder)
@@ -124,7 +126,7 @@ def create_app(settings: Settings, provider: ModelProvider | None = None) -> Fas
         actions = ActionLog(db)
         agent = Agent(
             model,
-            build_registry(memory, reminders, scheduler.poke, screen),
+            build_registry(memory, reminders, scheduler.poke, screen, browser),
             gate,
             store,
             memory=memory,
@@ -134,7 +136,9 @@ def create_app(settings: Settings, provider: ModelProvider | None = None) -> Fas
             screen=screen,
             max_steps=settings.max_steps,
             history_limit=settings.history_limit,
+            num_ctx=settings.num_ctx,
         )
+        scheduler.run_task = agent.run_task
         app.state.provider = model
         app.state.vision = vision
         app.state.bus = bus
@@ -155,6 +159,8 @@ def create_app(settings: Settings, provider: ModelProvider | None = None) -> Fas
         finally:
             if voice:
                 await voice.close()
+            if browser:
+                await browser.close()
             await scheduler.stop()
             await agent.drain()
             if embedder:
@@ -269,6 +275,15 @@ def create_app(settings: Settings, provider: ModelProvider | None = None) -> Fas
         if not request.app.state.reminders.dismiss(reminder_id):
             raise HTTPException(status.HTTP_404_NOT_FOUND, "No such reminder")
         return {"status": "ok"}
+
+    @app.post("/api/reminders/{reminder_id}/cancel")
+    async def cancel_reminder(reminder_id: int, request: Request) -> dict:
+        # The user clicked Cancel on this exact reminder or task; that click is the confirmation.
+        reminder = request.app.state.reminders.cancel(reminder_id)
+        if reminder is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "No such reminder")
+        request.app.state.scheduler.poke()
+        return {"reminder": reminder.to_dict()}
 
     @app.post("/api/reminders/{reminder_id}/snooze")
     async def snooze_reminder(reminder_id: int, body: SnoozeRequest, request: Request) -> dict:

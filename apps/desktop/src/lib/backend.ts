@@ -25,8 +25,10 @@ export type AgentEvent =
   | { type: "conversation"; id: string }
   | { type: "token"; text: string }
   | { type: "tool_call"; id: string; name: string; summary: string }
-  | { type: "confirm_request"; id: string; name: string; summary: string; risk: Risk }
-  | { type: "tool_result"; id: string; name: string; ok: boolean }
+  // `warning`: NOVA read a web page or the screen during this request, which may be behind it.
+  | { type: "confirm_request"; id: string; name: string; summary: string; risk: Risk; warning?: string }
+  // `blocked`: refused outright for safety, without asking.
+  | { type: "tool_result"; id: string; name: string; ok: boolean; blocked?: boolean }
   | { type: "error"; message: string }
   | { type: "done" };
 
@@ -48,6 +50,10 @@ export type Reminder = {
   pending_ack: boolean;
   /** When it was due, for a reminder that has fired. */
   fired_at: string | null;
+  /** Set for a scheduled task: the request NOVA carried out by itself. */
+  task: string | null;
+  /** What NOVA found the last time it ran the task. */
+  result: string | null;
 };
 
 /** Mirrors VoiceState in backend/nova/voice/service.py. */
@@ -150,6 +156,41 @@ export async function* chat(
 
 export async function forgetMemory(id: number): Promise<boolean> {
   const response = await request(`/api/memories/${id}`, { method: "DELETE" });
+  return response.ok;
+}
+
+export async function listMemories(): Promise<Memory[]> {
+  const response = await request("/api/memories");
+  if (!response.ok) throw new Error(`Backend returned HTTP ${response.status}`);
+  return (await response.json()).memories;
+}
+
+export type Action = {
+  id: number;
+  tool: string;
+  /** What the user was shown, e.g. "Sort 7 files in Downloads into Documents (3), Images (2)". */
+  summary: string;
+  outcome: "ran" | "approved" | "declined" | "blocked" | "rejected";
+  ok: boolean;
+  created_at: string;
+};
+
+/** Every action NOVA attempted, newest first. */
+export async function listActions(limit = 15): Promise<Action[]> {
+  const response = await request(`/api/actions?limit=${limit}`);
+  if (!response.ok) throw new Error(`Backend returned HTTP ${response.status}`);
+  return (await response.json()).actions;
+}
+
+export async function listReminders(): Promise<{ upcoming: Reminder[]; pending: Reminder[] }> {
+  const response = await request("/api/reminders");
+  if (!response.ok) throw new Error(`Backend returned HTTP ${response.status}`);
+  return response.json();
+}
+
+/** Cancel a reminder or scheduled task. The user's click is the confirmation. */
+export async function cancelReminder(id: number): Promise<boolean> {
+  const response = await request(`/api/reminders/${id}/cancel`, { method: "POST" });
   return response.ok;
 }
 

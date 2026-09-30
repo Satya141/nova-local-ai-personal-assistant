@@ -21,7 +21,7 @@ AUTH = {"Authorization": f"Bearer {TOKEN}"}
 @pytest.fixture
 def client(tmp_path):
     # No embedding model and no voice in tests: memory falls back to keywords, the microphone stays closed.
-    settings = Settings(api_token=TOKEN, data_dir=tmp_path, embed_model="", voice=False, vision_model="")
+    settings = Settings(api_token=TOKEN, data_dir=tmp_path, embed_model="", voice=False, vision_model="", browser=False)
     provider = FakeProvider([[say("Hello")], [say("Again")]])
     with TestClient(create_app(settings, provider)) as client:
         yield client
@@ -71,6 +71,19 @@ def test_reminders_can_be_listed_snoozed_and_dismissed(client):
     assert client.post("/api/reminders/999/dismiss", headers=AUTH).status_code == 404
 
 
+def test_a_reminder_or_task_can_be_cancelled_from_the_panel(client):
+    reminders = client.app.state.reminders
+    task = reminders.create("AI news", utc_now() + timedelta(hours=3), repeat="daily", task="Summarise the AI news")
+
+    upcoming = client.get("/api/reminders", headers=AUTH).json()["upcoming"]
+    assert upcoming[0]["task"] == "Summarise the AI news"
+    cancelled = client.post(f"/api/reminders/{task.id}/cancel", headers=AUTH).json()["reminder"]
+    assert cancelled["status"] == "cancelled"
+    assert client.get("/api/reminders", headers=AUTH).json()["upcoming"] == []
+    assert client.post("/api/reminders/999/cancel", headers=AUTH).status_code == 404
+    assert client.post(f"/api/reminders/{task.id}/cancel").status_code == 401
+
+
 def test_voice_endpoints_when_voice_is_off(client):
     assert client.get("/api/voice", headers=AUTH).json()["available"] is False
     assert client.post("/api/voice/listen", headers=AUTH).status_code == 404
@@ -79,7 +92,7 @@ def test_voice_endpoints_when_voice_is_off(client):
 
 def test_voice_reports_missing_models_instead_of_failing(tmp_path):
     settings = Settings(
-        api_token=TOKEN, data_dir=tmp_path, embed_model="", models_dir=tmp_path / "no-models", vision_model=""
+        api_token=TOKEN, data_dir=tmp_path, embed_model="", models_dir=tmp_path / "no-models", vision_model="", browser=False
     )
     with TestClient(create_app(settings, FakeProvider([]))) as voice_client:
         status = voice_client.get("/api/voice", headers=AUTH).json()

@@ -20,6 +20,7 @@
 .character[data-kind="plum"] { --hi: #efd0ff; --mid: #b56bf2; --lo: #7a32c4; --glow: rgb(181 107 242 / 0.4); }
 .character[data-kind="chime"] { --hi: #fff4c2; --mid: #ffc628; --lo: #d98a00; --glow: rgb(255 198 40 / 0.45); }
 .character[data-kind="iris"] { --hi: #ffd9e6; --mid: #ff6f9f; --lo: #cf3a70; --glow: rgb(255 111 159 / 0.42); }
+.character[data-kind="wren"] { --hi: #d4f6ff; --mid: #3cc6f0; --lo: #0f8bbf; --glow: rgb(60 198 240 / 0.42); }
 
 .character svg {
   width: 100%;
@@ -36,6 +37,12 @@
 .character[data-kind="plum"] .character-trim { fill: var(--lo); }
 .character[data-kind="chime"] .character-trim { fill: var(--lo); }
 .character[data-kind="iris"] .character-trim { fill: var(--lo); }
+.character[data-kind="wren"] .character-trim { fill: var(--lo); }
+.character-antenna-stalk { fill: none; stroke: var(--lo); stroke-width: 2.600; stroke-linecap: round; }
+.character-antenna { transform-origin: 38px 16.500px; }
+/* Browsing: the antenna twitches as pages come in. */
+.character[data-kind="wren"][data-state="working"] .character-antenna { animation: character-twitch 0.600s ease-in-out infinite; }
+@keyframes character-twitch { 50% { transform: rotate(-14deg); } }
 
 .character-brackets {
   fill: none;

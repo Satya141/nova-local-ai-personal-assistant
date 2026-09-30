@@ -222,11 +222,51 @@ fn build_tray(app: &AppHandle, shortcut: &str) -> tauri::Result<()> {
   Ok(())
 }
 
+/// NOVA's own pages: the bundled UI, or the dev server in a debug build.
+fn is_app_page(url: &tauri::Url) -> bool {
+  match (url.scheme(), url.host_str()) {
+    ("tauri", _) => true,
+    ("http" | "https", Some("tauri.localhost")) => true,
+    ("http", Some("localhost")) => cfg!(debug_assertions) && url.port() == Some(3000),
+    _ => false,
+  }
+}
+
+/// Open a web link in the user's own browser. Only http and https: a reply could contain any link.
+fn open_in_browser(url: &tauri::Url) {
+  if !matches!(url.scheme(), "http" | "https") {
+    log::warn!("refused to open a {} link", url.scheme());
+    return;
+  }
+  #[cfg(windows)]
+  {
+    // The shell's own URL handler, given the address as one argument: nothing is parsed by a shell.
+    if let Err(error) = std::process::Command::new("rundll32").args(["url.dll,FileProtocolHandler", url.as_str()]).spawn() {
+      log::error!("could not open a link: {error}");
+    }
+  }
+}
+
+/// Links in NOVA's replies must never turn the launcher into a browser window: the page would sit
+/// inside NOVA looking like NOVA. Leaving NOVA's own pages opens the link in the user's browser.
+fn navigation_guard() -> tauri::plugin::TauriPlugin<Wry> {
+  tauri::plugin::Builder::new("navigation-guard")
+    .on_navigation(|_webview, url| {
+      if is_app_page(url) {
+        return true;
+      }
+      open_in_browser(url);
+      false
+    })
+    .build()
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
   tauri::Builder::default()
     // Must be first: a second launch just brings up the running instance.
     .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| show_launcher(app)))
+    .plugin(navigation_guard())
     .plugin(tauri_plugin_log::Builder::default().level(log::LevelFilter::Info).build())
     .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, None))
     .plugin(

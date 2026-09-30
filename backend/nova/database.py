@@ -76,6 +76,15 @@ MIGRATIONS: tuple[str, ...] = (
         value TEXT NOT NULL
     );
     """,
+    # 4: scheduled tasks, stored as reminders that carry a request (Phase 5)
+    """
+    ALTER TABLE reminders ADD COLUMN task TEXT;
+    ALTER TABLE reminders ADD COLUMN result TEXT;
+    """,
+    # 5: the action log keeps the words the user saw ("Sort 7 files in Downloads into ...") (Phase 5)
+    """
+    ALTER TABLE action_log ADD COLUMN summary TEXT;
+    """,
 )
 
 
