@@ -19,6 +19,7 @@
 .character[data-kind="fern"] { --hi: #c4f7e4; --mid: #2fcfa5; --lo: #0c8f7c; --glow: rgb(47 207 165 / 0.4); }
 .character[data-kind="plum"] { --hi: #efd0ff; --mid: #b56bf2; --lo: #7a32c4; --glow: rgb(181 107 242 / 0.4); }
 .character[data-kind="chime"] { --hi: #fff4c2; --mid: #ffc628; --lo: #d98a00; --glow: rgb(255 198 40 / 0.45); }
+.character[data-kind="iris"] { --hi: #ffd9e6; --mid: #ff6f9f; --lo: #cf3a70; --glow: rgb(255 111 159 / 0.42); }
 
 .character svg {
   width: 100%;
@@ -34,6 +35,28 @@
 .character[data-kind="fern"] .character-trim { fill: #57c84d; }
 .character[data-kind="plum"] .character-trim { fill: var(--lo); }
 .character[data-kind="chime"] .character-trim { fill: var(--lo); }
+.character[data-kind="iris"] .character-trim { fill: var(--lo); }
+
+.character-brackets {
+  fill: none;
+  stroke: var(--lo);
+  stroke-width: 2.800;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0;
+  transform-origin: 32px 34px;
+}
+/* Looking at the screen: the viewfinder closes in; no spinning ring. */
+.character[data-kind="iris"][data-state="working"] .character-ring { opacity: 0; }
+.character[data-kind="iris"][data-state="working"] .character-brackets {
+  opacity: 1;
+  animation: character-focus 1.100s ease-in-out infinite;
+}
+.character[data-kind="iris"][data-state="working"] .character-eyes-open { transform: scale(1.200); }
+@keyframes character-focus {
+  0%, 100% { transform: scale(1.080); }
+  50% { transform: scale(0.940); }
+}
 
 /* Transform origins are in viewBox units: the body's centre is about (32, 35). */
 .character-float,

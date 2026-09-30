@@ -94,6 +94,13 @@ export const MicIcon = (props: IconProps) => (
   </Icon>
 );
 
+export const ScreenIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <rect x="1.8" y="2.6" width="12.4" height="8.6" rx="1.8" />
+    <path d="M5.6 14h4.8M8 11.2V14" />
+  </Icon>
+);
+
 export const StopIcon = (props: IconProps) => (
   <Icon {...props}>
     <rect x="4" y="4" width="8" height="8" rx="1.6" />

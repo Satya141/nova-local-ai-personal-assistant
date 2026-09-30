@@ -32,6 +32,7 @@ from nova.permissions.audit import ActionLog
 from nova.scheduler import ReminderStore, Scheduler
 from nova.settings import SettingsStore
 from nova.tools import build_registry
+from nova.vision import ScreenReader
 from nova.voice import VoiceService
 
 _HEARTBEAT_SECONDS = 15.0
@@ -43,6 +44,8 @@ class ChatRequest(BaseModel):
     conversation_id: str | None = None
     # Spoken by the user; the reply will be read aloud, so it should be short plain speech.
     voice: bool = False
+    # The user pressed the screen button: look at their window before answering.
+    screen: bool = False
 
 
 class VoiceSettingsRequest(BaseModel):
@@ -97,6 +100,21 @@ def create_app(settings: Settings, provider: ModelProvider | None = None) -> Fas
             if settings.embed_model
             else None
         )
+        # One model for everything when the chat model can also see; otherwise a second
+        # provider with a smaller context, loaded only for screen questions.
+        vision = None
+        if settings.vision_model:
+            vision = (
+                model
+                if settings.vision_model == settings.model and hasattr(model, "see")
+                else OllamaProvider(
+                    settings.ollama_url,
+                    settings.vision_model,
+                    keep_alive=settings.keep_alive,
+                    num_ctx=settings.vision_num_ctx,
+                )
+            )
+        screen = ScreenReader(vision) if vision else None
         bus = EventBus()
         store = ConversationStore(db)
         memory = MemoryStore(db, embedder)
@@ -106,17 +124,19 @@ def create_app(settings: Settings, provider: ModelProvider | None = None) -> Fas
         actions = ActionLog(db)
         agent = Agent(
             model,
-            build_registry(memory, reminders, scheduler.poke),
+            build_registry(memory, reminders, scheduler.poke, screen),
             gate,
             store,
             memory=memory,
             extractor=MemoryExtractor(model, memory) if settings.auto_memory else None,
             actions=actions,
             bus=bus,
+            screen=screen,
             max_steps=settings.max_steps,
             history_limit=settings.history_limit,
         )
         app.state.provider = model
+        app.state.vision = vision
         app.state.bus = bus
         app.state.store = store
         app.state.memory = memory
@@ -139,6 +159,8 @@ def create_app(settings: Settings, provider: ModelProvider | None = None) -> Fas
             await agent.drain()
             if embedder:
                 await embedder.aclose()
+            if vision is not None and vision is not model:
+                await vision.aclose()
             await model.aclose()
             db.close()
 
@@ -166,18 +188,24 @@ def create_app(settings: Settings, provider: ModelProvider | None = None) -> Fas
     @app.get("/api/health")
     async def health(request: Request) -> dict:
         model = await request.app.state.provider.status()
+        vision = request.app.state.vision
+        vision_status = await vision.status() if vision is not None else None
         return {
             "status": "ok",
             "version": __version__,
             "model": model.model,
             "model_ready": model.ready,
             "detail": model.detail,
+            # Whether NOVA can look at the screen; the UI shows the screen button only then.
+            "vision_ready": bool(vision_status and vision_status.ready),
         }
 
     @app.post("/api/warmup", status_code=status.HTTP_202_ACCEPTED)
-    async def warmup(request: Request, background: BackgroundTasks) -> dict:
-        """Called when the launcher opens, so the model is loading while the user types."""
-        background.add_task(request.app.state.provider.warm)
+    async def warmup(request: Request, background: BackgroundTasks, vision: bool = False) -> dict:
+        """Called when the launcher opens (or the screen button is armed, with ?vision=true),
+        so the right model is loading while the user types."""
+        target = request.app.state.vision if vision and request.app.state.vision else request.app.state.provider
+        background.add_task(target.warm)
         return {"status": "warming"}
 
     @app.post("/api/chat")
@@ -192,7 +220,9 @@ def create_app(settings: Settings, provider: ModelProvider | None = None) -> Fas
 
         async def events() -> AsyncIterator[str]:
             yield json.dumps({"type": "conversation", "id": conversation_id}) + "\n"
-            async for event in agent.run_turn(conversation_id, body.message.strip(), voice=body.voice):
+            async for event in agent.run_turn(
+                conversation_id, body.message.strip(), voice=body.voice, screen=body.screen
+            ):
                 yield json.dumps(event) + "\n"
 
         return StreamingResponse(events(), media_type="application/x-ndjson", headers=_NDJSON_HEADERS)

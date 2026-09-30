@@ -181,6 +181,13 @@ button {
   }
 }
 
+/* Armed: the next message includes a look at the screen. Iris's colour, steady rather than pulsing. */
+.screen-button[data-active="true"] {
+  background: rgb(255 111 159 / 0.16);
+  color: #ff6f9f;
+  animation: none;
+}
+
 /* The microphone is open. Red, like a recording light, and never hidden. */
 .live-dot {
   width: 7px;

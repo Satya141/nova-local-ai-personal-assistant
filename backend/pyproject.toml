@@ -12,6 +12,8 @@ dependencies = [
     "faster-whisper>=1.2,<2",
     "sounddevice>=0.5,<1",
     "piper-tts>=1.8,<2",
+    # Screen understanding (Phase 4)
+    "pillow>=12",
 ]
 
 [project.optional-dependencies]

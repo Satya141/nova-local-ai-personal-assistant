@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.4.0 (Phase 4: screen understanding) - 2026-10-01
+
+Ask NOVA about what is on your screen.
+
+### Screen
+- The screen button and an "Explain what's on my screen" chip in the launcher; `look_at_screen` for when you ask in words or by voice (confirmed first).
+- Captures the window you were working in, not NOVA's launcher on top of it, even where the launcher covers it.
+- Local vision model `qwen3-vl:8b`, loaded only for screen questions with a smaller context so it fits the GPU: about 3 to 8 s per answer once loaded.
+- Iris, a new character, does the looking, with a viewfinder animation.
+- Nothing is captured without a click or a confirmation, nothing continuously, and no screenshot is ever saved.
+
+### Quality
+- `evals/vision.py`: six realistic synthetic screens, 12/12 answers contain the facts on screen.
+- New agent scenario: asked about "the error on my screen", the model uses `look_at_screen` (2/2).
+- 148 unit tests, plus an opt-in test that captures a real window.
+
+### Fixed during development
+- At 1 AM, "every weekday at 9 AM" started the next day instead of that morning; the first time of a daily or weekday reminder is now worked out in code.
+- An import cycle between the tools and vision packages that the tests happened to hide.
+- An empty answer from the vision model right after it loaded; empty answers are retried once.
+
 ## 0.3.0 (Phase 3: voice) - 2026-10-01
 
 Talk to NOVA. Say "Hey Nova, open VS Code", or press the mic button, and it answers out loud.

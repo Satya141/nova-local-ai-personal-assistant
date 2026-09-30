@@ -36,6 +36,7 @@ from nova.memory.embeddings import OllamaEmbedder
 from nova.permissions import PermissionGate
 from nova.scheduler import ReminderStore
 from nova.tools import ToolResult, build_registry
+from nova.vision import ScreenReader
 
 HOME = r"C:\Users\satya"
 FILES = {
@@ -95,11 +96,25 @@ def sandbox(registry, run: Run):
             return ToolResult(True, json.dumps({"opened": args.path}))
         return ToolResult(False, f"'{args.path}' does not exist. Use search_files to find the right path.")
 
+    def look(args) -> ToolResult:
+        return ToolResult(
+            True,
+            json.dumps(
+                {
+                    "window": "App.tsx - shop-frontend - Visual Studio Code",
+                    "app": "Code",
+                    "seen": "The terminal shows: Uncaught TypeError: Cannot read properties of undefined "
+                    "(reading 'map') at ProductList (src/App.tsx:42:21). Line 42 calls visible.map.",
+                }
+            ),
+        )
+
     stand_ins = {
         "open_application": open_app,
         "close_application": lambda args: ToolResult(True, json.dumps({"closed": [args.name]})),
         "search_files": search,
         "open_path": open_path,
+        "look_at_screen": look,
     }
     for name in registry.names():
         tool = registry.get(name)
@@ -298,6 +313,14 @@ SCENARIOS = [
         reminders_left(1),
         reminders=(("Go to the gym", timedelta(hours=3)), ("Pay rent", timedelta(days=2))),
     ),
+    Scenario(
+        "screen_question",
+        "What's wrong with the error on my screen?",
+        all_of(
+            lambda r: None if r.called("look_at_screen") else f"did not look; calls={r.order()}",
+            reply_matches(r"undefined|map|items"),
+        ),
+    ),
     Scenario("general_knowledge", "What is the capital of Australia?", all_of(no_tools, reply_matches(r"Canberra"))),
     Scenario(
         "unsupported_request",
@@ -410,7 +433,8 @@ async def run_scenario(scenario: Scenario, settings: Settings, provider, embedde
     for text, offset in scenario.reminders:
         run.reminders.create(text, datetime.now(UTC) + offset)
 
-    registry = sandbox(build_registry(run.memory, run.reminders, lambda: None), run)
+    # The screen tool is registered with a reader that is never used: its stand-in answers instead.
+    registry = sandbox(build_registry(run.memory, run.reminders, lambda: None, ScreenReader(None)), run)
     gate = PermissionGate(confirm_timeout=5)
     store = ConversationStore(db)
     agent = Agent(provider, registry, gate, store, memory=run.memory, max_steps=settings.max_steps)

@@ -2,7 +2,16 @@
 
 import { useCallback, useReducer, useRef } from "react";
 
-import { type AgentEvent, type Memory, type Risk, answerConfirmation, chat, forgetMemory, speak } from "@/lib/backend";
+import {
+  type AgentEvent,
+  type Memory,
+  type Risk,
+  type TurnOptions,
+  answerConfirmation,
+  chat,
+  forgetMemory,
+  speak,
+} from "@/lib/backend";
 
 export type ToolState = "running" | "awaiting" | "ok" | "failed" | "declined";
 
@@ -140,7 +149,7 @@ export function useAgent() {
    * Run one turn. A spoken request (`voice`) gets a short reply that is also read
    * aloud: the final message, after any tool calls.
    */
-  const send = useCallback(async (text: string, { voice = false }: { voice?: boolean } = {}) => {
+  const send = useCallback(async (text: string, { voice = false, screen = false }: TurnOptions = {}) => {
     if (running.current) return false;
     const controller = new AbortController();
     running.current = controller;
@@ -148,7 +157,7 @@ export function useAgent() {
     let reply = "";
     let failed = false;
     try {
-      for await (const event of chat(text, conversation.current, controller.signal, voice)) {
+      for await (const event of chat(text, conversation.current, controller.signal, { voice, screen })) {
         if (event.type === "conversation") {
           conversation.current = event.id;
           continue;

@@ -13,6 +13,7 @@ const TOOL_OWNERS: Record<string, CharacterKind> = {
   create_reminder: "chime",
   list_reminders: "chime",
   cancel_reminder: "chime",
+  look_at_screen: "iris",
 };
 
 export function toolOwner(name: string): CharacterKind {

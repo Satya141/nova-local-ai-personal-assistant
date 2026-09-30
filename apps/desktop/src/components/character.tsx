@@ -5,7 +5,7 @@ import { useId } from "react";
  * Nova is the assistant itself; the others each own a kind of action and
  * appear as tiny icons beside it.
  */
-export type CharacterKind = "nova" | "ember" | "fern" | "plum" | "chime";
+export type CharacterKind = "nova" | "ember" | "fern" | "plum" | "chime" | "iris";
 
 /** Each state has its own face and motion (see character.css). */
 export type CharacterState =
@@ -41,6 +41,7 @@ const NAMES: Record<CharacterKind, string> = {
   fern: "Fern",
   plum: "Plum",
   chime: "Chime",
+  iris: "Iris",
 };
 
 /** Silhouettes, in a 64-unit box with the face centred near (32, 35). */
@@ -53,6 +54,8 @@ const BODIES: Record<CharacterKind, string> = {
   fern: "M32 9.5c1.2 0 2.3.7 3 1.9C39.500 19 51.5 27.200 51.5 39.200c0 10.2-8.5 17.300-19.5 17.300s-19.5-7.100-19.5-17.300C12.500 27.200 24.500 19 29 11.400c.7-1.200 1.800-1.900 3-1.900z",
   // A wide bean that leans to one side.
   plum: "M21.500 17.500c9.500-5.500 23.500-2.500 29 8.500 5.500 11.500-.5 26-13.500 29.500-12 3.200-24-3.800-26.500-15.500-1.900-9 2.400-17.500 11-22.500z",
+  // A soft rounded square, like a little camera.
+  iris: "M19.500 15h25c5.800 0 10.500 4.700 10.500 10.500v20c0 5.800-4.700 10.500-10.500 10.500h-25C13.700 56 9 51.300 9 45.500v-20C9 19.700 13.700 15 19.500 15z",
   // A bell: domed crown, flared rim.
   chime: "M32 11c9.500 0 15.500 7.800 15.500 17.500v8.500c0 4 2.200 6.900 5 9.200 1.600 1.300.7 3.800-1.400 3.800H12.900c-2.100 0-3-2.500-1.400-3.800 2.800-2.300 5-5.200 5-9.200v-8.500C16.500 18.800 22.500 11 32 11z",
 };
@@ -75,6 +78,8 @@ function Accessory({ kind }: { kind: CharacterKind }) {
           <circle className="character-trim" cx="45.500" cy="19.500" r="6" />
         </>
       );
+    case "iris": // a camera bump on top
+      return <rect className="character-trim" x="24.500" y="9" width="15" height="9" rx="3.500" />;
     case "chime": // a hanging loop on top and a clapper below the rim
       return (
         <>
@@ -143,6 +148,13 @@ export function Character({
 
         {/* working: a spinning progress ring */}
         <circle className="character-ring" cx="32" cy="34" r="29" />
+
+        {/* Iris at work: a viewfinder's focus brackets */}
+        {kind === "iris" && (
+          <g className="character-brackets">
+            <path d="M5 16V8h8M51 8h8v8M59 52v8h-8M13 60H5v-8" />
+          </g>
+        )}
 
         {/* hearing: sound rippling in */}
         <g className="character-sonar">

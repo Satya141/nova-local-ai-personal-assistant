@@ -25,6 +25,12 @@ pnpm --dir "$root\apps\desktop" install
 Write-Host "== Model: $model"
 if (-not (ollama list | Select-String -SimpleMatch $model)) { ollama pull $model }
 
+$visionModel = if ($null -ne $env:NOVA_VISION_MODEL) { $env:NOVA_VISION_MODEL } else { 'qwen3-vl:8b' }
+if ($visionModel) {
+    Write-Host "== Screen understanding: $visionModel"
+    if (-not (ollama list | Select-String -SimpleMatch $visionModel)) { ollama pull $visionModel }
+}
+
 if ($embedModel) {
     Write-Host "== Memory embeddings: $embedModel"
     if (-not (ollama list | Select-String -SimpleMatch $embedModel)) { ollama pull $embedModel }

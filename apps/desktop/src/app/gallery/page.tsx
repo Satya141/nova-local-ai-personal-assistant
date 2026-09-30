@@ -14,7 +14,7 @@ import type { Item } from "@/lib/use-agent";
  * `pnpm dev` runs.
  */
 
-const KINDS: CharacterKind[] = ["nova", "ember", "fern", "plum", "chime"];
+const KINDS: CharacterKind[] = ["nova", "ember", "fern", "plum", "chime", "iris"];
 const STATES: CharacterState[] = [
   "idle", "listening", "hearing", "thinking", "working", "speaking", "confirm", "done", "error", "asleep", "ringing",
 ];
@@ -27,6 +27,7 @@ const SAMPLE: Item[] = [
   { kind: "tool", key: 4, callId: "d", name: "close_application", summary: "Close Notepad. Unsaved work in it could be lost.", state: "awaiting", risk: "medium" },
   { kind: "tool", key: 5, callId: "e", name: "close_application", summary: "Close Paint. Unsaved work in it could be lost.", state: "declined" },
   { kind: "tool", key: 6, callId: "f", name: "create_reminder", summary: "Remind you tomorrow at 10:00 AM: Review the budget", state: "ok" },
+  { kind: "tool", key: 11, callId: "g", name: "look_at_screen", summary: "Look at your screen", state: "running" },
   { kind: "assistant", key: 7, text: "Calculator is open. I found **2 files** that look like your resume:\n\n1. `Resume 2026.pdf` in Documents\n2. `resume-final.docx` in Downloads\n\nWhich one should I open?" },
   { kind: "memory", key: 8, memoryId: 1, content: "The user has a Cognizant interview on Friday 9 October 2026.", forgotten: false },
   { kind: "memory", key: 9, memoryId: 2, content: "The user prefers short answers.", forgotten: true },

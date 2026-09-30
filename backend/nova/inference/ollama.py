@@ -135,6 +135,27 @@ class OllamaProvider:
         except (KeyError, ValueError) as exc:
             raise ModelError(f"The model did not return valid JSON: {exc}") from exc
 
+    async def see(self, image_b64: str, prompt: str, max_tokens: int | None = None) -> str:
+        """Ask a vision model about one image. Raises ModelError on failure."""
+        payload = {
+            "model": self._model,
+            "messages": [{"role": "user", "content": prompt, "images": [image_b64]}],
+            "stream": False,
+            "think": False,
+            "keep_alive": self._keep_alive,
+            "options": {**self._options, **({"num_predict": max_tokens} if max_tokens else {})},
+        }
+        try:
+            response = await self._client.post("/api/chat", json=payload)
+        except httpx.HTTPError as exc:
+            raise ModelError(f"Cannot reach Ollama: {exc}") from exc
+        if response.status_code != 200:
+            raise ModelError(self._describe_failure(response.status_code, response.content))
+        try:
+            return response.json()["message"]["content"].strip()
+        except (KeyError, ValueError) as exc:
+            raise ModelError(f"Unexpected reply from the vision model: {exc}") from exc
+
     async def warm(self) -> None:
         # A chat request with no messages loads the model and returns immediately.
         payload = {

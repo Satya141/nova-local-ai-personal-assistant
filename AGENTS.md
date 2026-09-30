@@ -16,6 +16,7 @@ backend/                 Python 3.12, FastAPI. All agent logic lives here.
   nova/memory/           conversations, long-term memory, embeddings, automatic extraction
   nova/scheduler/        reminders and the loop that fires them
   nova/voice/            microphone, voice activity, wake phrase + Whisper, Piper, the voice service
+  nova/vision/           capturing the user's window and asking the vision model about it
   nova/settings.py       persistent user settings (e.g. wake word on/off)
   nova/api/              HTTP API (token-protected, loopback only) and the event stream
   nova/database.py       the SQLite file and its migrations
@@ -42,6 +43,8 @@ scripts/setup.ps1        one-time dev setup
 | Agent evals (real model, ~2 min) | `cd backend; .venv\Scripts\python -m evals.run` |
 | Memory extraction evals | `cd backend; .venv\Scripts\python -m evals.run --memory` |
 | Voice pipeline evals (real models, synthetic speech) | `cd backend; .venv\Scripts\python -m evals.voice` |
+| Screen understanding evals (synthetic screens) | `cd backend; .venv\Scripts\python -m evals.vision` |
+| Real-window capture test (opens a small window) | `cd backend; $env:NOVA_GUI_TESTS=1; .venv\Scripts\python -m pytest tests/test_vision.py` |
 | Frontend type-check | `pnpm --dir apps/desktop exec tsc --noEmit` |
 | Character gallery | `pnpm --dir apps/desktop dev`, then open http://localhost:3000/gallery |
 | Release build (no installer) | `pnpm --dir apps/desktop tauri build --no-bundle` |
@@ -59,10 +62,11 @@ Run the evals after any change to a prompt, a tool description, the memory pipel
 7. **The API stays private.** It binds to loopback and every route requires the per-launch bearer token the shell generates. Keep both.
 8. **Clients stay thin.** No agent logic in the desktop app. The UI renders the event streams documented at the top of `backend/nova/agent/loop.py` and in `backend/nova/api/app.py`; if you change those events, update `apps/desktop/src/lib/backend.ts` to match.
 9. **No hard-coded model names** outside `backend/nova/config.py`. Everything model-specific goes behind `ModelProvider` or `Embedder`.
-10. **The microphone is opt-in and visible.** It opens only while "Hey Nova" is switched on or for one mic-button command, and whenever it is open the tray icon and the launcher say so. Audio never touches disk or the network, and speech without the wake phrase is dropped. Voice models load with `local_files_only=True`.
-11. **Schema changes are new migrations.** Append to `MIGRATIONS` in `nova/database.py`; never edit one that has shipped.
-12. **No secrets in source.** Credentials come from environment variables.
-13. **Tests accompany behaviour changes.** New tools need tests for their matching and refusal logic; anything touching the gate needs an agent-loop test.
+10. **The screen is looked at only on request.** The screen button (a click is consent) or a confirmed `look_at_screen` call; never on the model's own initiative, never continuously, and screenshots are never stored. Capture targets the user's window, never NOVA's own.
+11. **The microphone is opt-in and visible.** It opens only while "Hey Nova" is switched on or for one mic-button command, and whenever it is open the tray icon and the launcher say so. Audio never touches disk or the network, and speech without the wake phrase is dropped. Voice models load with `local_files_only=True`.
+12. **Schema changes are new migrations.** Append to `MIGRATIONS` in `nova/database.py`; never edit one that has shipped.
+13. **No secrets in source.** Credentials come from environment variables.
+14. **Tests accompany behaviour changes.** New tools need tests for their matching and refusal logic; anything touching the gate needs an agent-loop test.
 
 ## Adding a tool
 
@@ -74,7 +78,7 @@ Run the evals after any change to a prompt, a tool description, the memory pipel
 
 ## The characters
 
-Nova (the assistant and its memory), Ember (apps), Fern (files), Plum (closing things) and Chime (reminders) are NOVA's own designs.
+Nova (the assistant and its memory), Ember (apps), Fern (files), Plum (closing things), Chime (reminders) and Iris (the screen) are NOVA's own designs.
 A character keeps its colour in every state; status is shown by its face, motion and a small mark.
 All visuals are in `apps/desktop/src/app/character.css`. Check changes on `/gallery` in both light and dark themes, and keep the `prefers-reduced-motion` block working.
 
@@ -88,4 +92,4 @@ Processes started from inside a sandboxed (MSIX-packaged) host see a private cop
 
 ## Current scope
 
-Phases 1, 2 and 3 are done. Not built yet: screen understanding (Phase 4), integrations such as Gmail, Calendar, GitHub and browser automation (5), mobile (6), sync (7), distributed inference (8), the life timeline (9). Scheduled agent tasks ("every morning, summarise my email") wait for Phase 5, when there is something for them to do. A trained wake-word model could replace the speech-recognition wake check later; `Transcriber.find_wake` is the seam. Do not start those without being asked, and do not add abstractions for them in advance.
+Phases 1 to 4 are done. Not built yet: integrations such as Gmail, Calendar, GitHub and browser automation (5), mobile (6), sync (7), distributed inference (8), the life timeline (9). Scheduled agent tasks ("every morning, summarise my email") wait for Phase 5, when there is something for them to do. A trained wake-word model could replace the speech-recognition wake check later; `Transcriber.find_wake` is the seam. Do not start those without being asked, and do not add abstractions for them in advance.

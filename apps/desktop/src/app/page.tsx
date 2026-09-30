@@ -5,7 +5,7 @@ import { listen } from "@tauri-apps/api/event";
 import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
 
 import { Character, type CharacterKind, type CharacterState } from "@/components/character";
-import { ChipIcon, MicIcon, ReturnIcon, StopIcon } from "@/components/icons";
+import { ChipIcon, MicIcon, ReturnIcon, ScreenIcon, StopIcon } from "@/components/icons";
 import { Transcript } from "@/components/transcript";
 import {
   type VoiceState,
@@ -23,10 +23,11 @@ import { useAgent } from "@/lib/use-agent";
 
 type Status =
   | { kind: "starting" }
-  | { kind: "ready"; model: string }
+  | { kind: "ready"; model: string; vision: boolean }
   | { kind: "problem"; message: string };
 
-const SUGGESTIONS: { who: CharacterKind; text: string }[] = [
+const SUGGESTIONS: { who: CharacterKind; text: string; screen?: boolean }[] = [
+  { who: "iris", text: "Explain what's on my screen", screen: true },
   { who: "ember", text: "Open Calculator" },
   { who: "fern", text: "Find my resume" },
   { who: "chime", text: "Remind me in 10 minutes to stretch" },
@@ -63,7 +64,7 @@ async function connect(): Promise<{ status: Status; shortcut: string }> {
     try {
       const report = await health();
       const status: Status = report.model_ready
-        ? { kind: "ready", model: report.model }
+        ? { kind: "ready", model: report.model, vision: report.vision_ready }
         : { kind: "problem", message: report.detail ?? "The model is not ready." };
       return { status, shortcut: info.shortcut };
     } catch {
@@ -84,6 +85,8 @@ export default function Launcher() {
   const [celebrating, setCelebrating] = useState(false);
   const [voice, setVoice] = useState<VoiceStatus | null>(null);
   const [voiceNote, setVoiceNote] = useState<string | null>(null);
+  // The screen button: the next message is sent with a look at the user's window.
+  const [screenArmed, setScreenArmed] = useState(false);
 
   const panel = useRef<HTMLElement>(null);
   const field = useRef<HTMLInputElement>(null);
@@ -239,17 +242,19 @@ export default function Launcher() {
   }, [agent.busy, agent.outcome]);
 
   const submit = useCallback(
-    (text: string) => {
+    (text: string, withScreen = false) => {
       const message = text.trim();
       if (!message || agent.busy || !ready) return;
       setInput("");
       setCelebrating(false);
+      setScreenArmed(false);
       // Typing takes over from talking.
       if (voiceActive) stopVoice();
-      agent.send(message);
+      agent.send(message, { screen: withScreen || screenArmed });
     },
-    [agent, ready, voiceActive],
+    [agent, ready, voiceActive, screenArmed],
   );
+  const canSee = status.kind === "ready" && status.vision;
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -309,13 +314,31 @@ export default function Launcher() {
           ref={field}
           value={input}
           onChange={(event) => setInput(event.target.value)}
-          placeholder="Ask Nova anything..."
+          placeholder={screenArmed ? "Ask about what's on your screen..." : "Ask Nova anything..."}
           aria-label="Message Nova"
           autoFocus
           spellCheck={false}
           autoComplete="off"
           className="selectable h-full min-w-0 flex-1 bg-transparent text-[17px] outline-none placeholder:text-text-muted"
         />
+        {canSee && (
+          <button
+            type="button"
+            onClick={() => {
+              // Load the vision model while the question is being typed.
+              if (!screenArmed) warmup(true);
+              setScreenArmed(!screenArmed);
+              field.current?.focus();
+            }}
+            data-active={screenArmed}
+            aria-pressed={screenArmed}
+            aria-label="Include my screen with the next message"
+            title={screenArmed ? "Your screen will be included" : "Include my screen"}
+            className="mic-button screen-button"
+          >
+            <ScreenIcon size={15} />
+          </button>
+        )}
         {ready && voice?.available && (
           <button
             type="button"
@@ -356,11 +379,11 @@ export default function Launcher() {
       ) : (
         ready && (
           <div className="flex flex-none flex-wrap gap-2 border-t border-line px-4 py-2.5">
-            {SUGGESTIONS.map((suggestion, index) => (
+            {SUGGESTIONS.filter((suggestion) => !suggestion.screen || canSee).map((suggestion, index) => (
               <button
                 key={suggestion.text}
                 type="button"
-                onClick={() => submit(suggestion.text)}
+                onClick={() => submit(suggestion.text, suggestion.screen)}
                 style={{ animationDelay: `${index * 45}ms` }}
                 className="suggestion rise flex items-center gap-1.5 rounded-full border border-line bg-surface-raised py-1 pl-1.5 pr-3 text-[12.500px] hover:border-accent focus-visible:outline-2 focus-visible:outline-accent"
               >

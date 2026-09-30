@@ -14,6 +14,8 @@ export type Health = {
   model: string;
   model_ready: boolean;
   detail: string | null;
+  /** Whether NOVA can look at the screen. */
+  vision_ready: boolean;
 };
 
 export type Risk = "low" | "medium" | "high";
@@ -109,9 +111,9 @@ export async function health(): Promise<Health> {
   return response.json();
 }
 
-/** Start loading the model. Fire and forget. */
-export function warmup(): void {
-  request("/api/warmup", { method: "POST" }).catch(() => {});
+/** Start loading the chat model, or the vision model when a screen question is coming. Fire and forget. */
+export function warmup(vision = false): void {
+  request(`/api/warmup${vision ? "?vision=true" : ""}`, { method: "POST" }).catch(() => {});
 }
 
 export async function answerConfirmation(callId: string, approved: boolean): Promise<void> {
@@ -122,15 +124,22 @@ export async function answerConfirmation(callId: string, approved: boolean): Pro
 }
 
 /** Send one message and stream back the agent's events. */
+export type TurnOptions = {
+  /** Spoken by the user; the reply is read aloud. */
+  voice?: boolean;
+  /** The user asked NOVA to look at their screen for this message. */
+  screen?: boolean;
+};
+
 export async function* chat(
   message: string,
   conversationId: string | null,
   signal: AbortSignal,
-  voice = false,
+  { voice = false, screen = false }: TurnOptions = {},
 ): AsyncGenerator<AgentEvent> {
   const response = await request("/api/chat", {
     method: "POST",
-    body: JSON.stringify({ message, conversation_id: conversationId, voice }),
+    body: JSON.stringify({ message, conversation_id: conversationId, voice, screen }),
     signal,
   });
   if (!response.ok || !response.body) {

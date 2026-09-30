@@ -19,6 +19,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import uuid
 from collections.abc import AsyncIterator
 from contextlib import aclosing
 from datetime import datetime
@@ -36,6 +37,7 @@ from nova.memory.store import ConversationStore
 from nova.permissions.audit import ActionLog, Outcome
 from nova.permissions.gate import Decision, PermissionGate
 from nova.tools.base import ToolRegistry, ToolResult
+from nova.vision.reader import ScreenReader
 
 log = logging.getLogger(__name__)
 
@@ -55,6 +57,8 @@ cannot do that yet.
 call the tool; a successful result means the user already approved.
 - If a request is ambiguous, for example several files match, ask one short question.
 - To open a file the user describes, find it with search_files first, then open the match.
+- When the user asks about something on their screen ("this error", "what does this chart mean", \
+"why is this button disabled"), call look_at_screen with their question, then answer from what it saw.
 - Reminders: for a clock time, pass `at` as a local ISO date and time, taking the date from the \
 calendar below (never calculate a date yourself); for "in 20 minutes" or "in 2 hours", pass \
 `in_minutes`.
@@ -115,6 +119,7 @@ class Agent:
         extractor: MemoryExtractor | None = None,
         actions: ActionLog | None = None,
         bus: EventBus | None = None,
+        screen: ScreenReader | None = None,
         max_steps: int = 8,
         history_limit: int = 40,
     ) -> None:
@@ -126,13 +131,15 @@ class Agent:
         self._extractor = extractor
         self._actions = actions
         self._bus = bus
+        self._screen = screen
         self._max_steps = max_steps
         self._history_limit = history_limit
         self._background: set[asyncio.Task] = set()
 
     async def run_turn(
-        self, conversation_id: str, user_text: str, voice: bool = False
+        self, conversation_id: str, user_text: str, voice: bool = False, screen: bool = False
     ) -> AsyncIterator[dict[str, Any]]:
+        """One turn. `screen` means the user pressed the screen button: look first, no confirmation."""
         self._store.add_message(conversation_id, Message(role="user", content=user_text))
         memories = await self._memory.context_for(user_text) if self._memory else []
         system = _system_message(memories, voice)
@@ -141,6 +148,19 @@ class Agent:
         called: set[str] = set()
         # What NOVA did this turn, in words, so memory extraction can tell requests from facts.
         handled: list[str] = []
+        if screen and self._screen:
+            # The screen button: the vision model's answer is the reply. Handing it to the chat
+            # model as well would mean swapping models on the GPU (about 6 s) for nothing.
+            answered = False
+            async for event in self._look_first(conversation_id, user_text):
+                answered = answered or event["type"] == "token"
+                yield event
+            if answered:
+                yield {"type": "done"}
+                self._after_turn(conversation_id, user_text, {"look_at_screen"}, ["Look at your screen"])
+                return
+            called.add("look_at_screen")
+            handled.append("Look at your screen")
         try:
             for _ in range(self._max_steps):
                 messages = [system, *self._store.history(conversation_id, self._history_limit)]
@@ -241,6 +261,25 @@ class Agent:
             conversation_id, Message(role="tool", content=result.content, tool_name=call.name)
         )
         yield {"type": "tool_result", "id": call.id, "name": call.name, "ok": result.ok}
+
+    async def _look_first(self, conversation_id: str, question: str) -> AsyncIterator[dict[str, Any]]:
+        """The screen button: the click is the user's permission, so the screenshot is taken straight away.
+
+        It is recorded as an ordinary look_at_screen call so the model sees the result in context.
+        """
+        call = ToolCall(id=f"screen-{uuid.uuid4().hex[:12]}", name="look_at_screen", arguments={"question": question})
+        yield {"type": "tool_call", "id": call.id, "name": call.name, "summary": "Look at your screen"}
+        result = await self._screen.look(question)
+        self._store.add_message(conversation_id, Message(role="assistant", content="", tool_calls=(call,)))
+        self._store.add_message(conversation_id, Message(role="tool", content=result.content, tool_name=call.name))
+        if self._actions:
+            self._actions.record(conversation_id, call.name, call.arguments, Outcome.APPROVED, result.ok, result.content)
+        yield {"type": "tool_result", "id": call.id, "name": call.name, "ok": result.ok}
+        if result.ok:
+            seen = json.loads(result.content)["seen"]
+            # Stored as the reply, so follow-up questions have it in context.
+            self._store.add_message(conversation_id, Message(role="assistant", content=seen))
+            yield {"type": "token", "text": seen}
 
     def _prepare(self, call: ToolCall) -> tuple[Any, Any] | ToolResult:
         """Resolve the tool and validate its arguments. The model's word is not trusted for either."""

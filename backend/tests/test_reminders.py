@@ -8,6 +8,7 @@ import pytest
 
 from nova.events import EventBus
 from nova.scheduler import ReminderStore, Scheduler, next_occurrence
+from nova.scheduler.reminders import first_occurrence
 from nova.tools.reminders import CreateReminderArgs, ReminderIdArgs, friendly_time, reminder_tools
 
 NOW = datetime(2026, 9, 30, 12, 0, tzinfo=UTC)
@@ -151,6 +152,28 @@ async def test_a_repeating_time_already_past_today_starts_next_time(tools, remin
     result = await tools["create_reminder"].handler(CreateReminderArgs(text="Stretch", at=past, repeat="daily"))
     assert result.ok
     assert reminders.upcoming()[0].due_at > NOW
+
+
+async def test_a_repeating_reminder_starts_at_the_next_matching_time(reminders):
+    # 1 AM local on Thursday 1 October; the model said "tomorrow 9:00" for "every weekday at 9".
+    one_am = datetime(2026, 10, 1, 1, 0).astimezone()
+    tools = {tool.name: tool for tool in reminder_tools(reminders, lambda: None, lambda: one_am.astimezone(UTC))}
+    tomorrow_nine = (one_am + timedelta(days=1)).replace(hour=9).replace(tzinfo=None).isoformat(timespec="minutes")
+
+    result = await tools["create_reminder"].handler(
+        CreateReminderArgs(text="Stretch", at=tomorrow_nine, repeat="weekdays")
+    )
+
+    assert result.ok
+    due = reminders.upcoming()[0].due_at.astimezone()
+    assert (due.day, due.hour) == (1, 9), "9 AM later today, not tomorrow"
+
+
+def test_first_occurrence_skips_weekends_and_past_times():
+    friday_evening = datetime(2026, 10, 2, 20, 0).astimezone()
+    nine = friday_evening.replace(hour=9)
+    assert first_occurrence(nine, "weekdays", friday_evening).astimezone().strftime("%a %H:%M") == "Mon 09:00"
+    assert first_occurrence(nine, "daily", friday_evening).astimezone().strftime("%a %H:%M") == "Sat 09:00"
 
 
 def test_create_needs_exactly_one_time():

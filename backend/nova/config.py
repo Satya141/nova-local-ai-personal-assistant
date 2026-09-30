@@ -50,6 +50,11 @@ class Settings:
     embed_model: str = "embeddinggemma"
     # Notice lasting facts in conversation and save them without being asked.
     auto_memory: bool = True
+    # Reads screenshots. Empty disables looking at the screen.
+    vision_model: str = "qwen3-vl:8b"
+    # A screenshot plus a short answer fits in 4096 tokens. At 8192 qwen3-vl:8b did not
+    # fit the 8 GB GPU (20% ran on the CPU) and answers took 9.5 s instead of 3.4 s.
+    vision_num_ctx: int = 4096
     # Voice input and output. The microphone only opens when the user turns it on.
     voice: bool = True
     models_dir: Path = field(default_factory=_default_models_dir)
@@ -79,6 +84,7 @@ class Settings:
             num_ctx=int(os.environ.get("NOVA_NUM_CTX", cls.num_ctx)),
             embed_model=os.environ.get("NOVA_EMBED_MODEL", cls.embed_model),
             auto_memory=_env_bool("NOVA_AUTO_MEMORY", cls.auto_memory),
+            vision_model=os.environ.get("NOVA_VISION_MODEL", cls.vision_model),
             voice=_env_bool("NOVA_VOICE", cls.voice),
             models_dir=Path(os.environ["NOVA_MODELS_DIR"]) if os.environ.get("NOVA_MODELS_DIR") else _default_models_dir(),
             allowed_origins=(

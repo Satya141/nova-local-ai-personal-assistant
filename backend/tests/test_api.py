@@ -21,7 +21,7 @@ AUTH = {"Authorization": f"Bearer {TOKEN}"}
 @pytest.fixture
 def client(tmp_path):
     # No embedding model and no voice in tests: memory falls back to keywords, the microphone stays closed.
-    settings = Settings(api_token=TOKEN, data_dir=tmp_path, embed_model="", voice=False)
+    settings = Settings(api_token=TOKEN, data_dir=tmp_path, embed_model="", voice=False, vision_model="")
     provider = FakeProvider([[say("Hello")], [say("Again")]])
     with TestClient(create_app(settings, provider)) as client:
         yield client
@@ -78,7 +78,9 @@ def test_voice_endpoints_when_voice_is_off(client):
 
 
 def test_voice_reports_missing_models_instead_of_failing(tmp_path):
-    settings = Settings(api_token=TOKEN, data_dir=tmp_path, embed_model="", models_dir=tmp_path / "no-models")
+    settings = Settings(
+        api_token=TOKEN, data_dir=tmp_path, embed_model="", models_dir=tmp_path / "no-models", vision_model=""
+    )
     with TestClient(create_app(settings, FakeProvider([]))) as voice_client:
         status = voice_client.get("/api/voice", headers=AUTH).json()
         assert status["available"] is False and "models missing" in status["detail"]
@@ -112,6 +114,7 @@ def test_health_reports_model_status(client):
     body = client.get("/api/health", headers=AUTH).json()
     assert body["status"] == "ok"
     assert body["model"] == "fake" and body["model_ready"] is True
+    assert body["vision_ready"] is False
 
 
 def test_chat_streams_events_and_continues_a_conversation(client):

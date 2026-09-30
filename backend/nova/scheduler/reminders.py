@@ -63,6 +63,24 @@ def next_occurrence(due: datetime, repeat: str, after: datetime) -> datetime:
             return candidate
 
 
+def first_occurrence(due: datetime, repeat: str, now: datetime) -> datetime:
+    """The first time a daily or weekday reminder at `due`'s clock time should ring after `now`.
+
+    The model picks a date for "every weekday at 9" and, at 1 AM, picked tomorrow
+    instead of later today. The clock time is what the user said; the date is worked
+    out here.
+    """
+    clock = due.astimezone()
+    local_now = now.astimezone()
+    candidate = local_now.replace(hour=clock.hour, minute=clock.minute, second=0, microsecond=0)
+    if candidate <= local_now:
+        candidate += timedelta(days=1)
+    if repeat == "weekdays":
+        while candidate.weekday() >= 5:
+            candidate += timedelta(days=1)
+    return candidate.astimezone(UTC)
+
+
 class ReminderStore:
     def __init__(self, db: Database) -> None:
         self._db = db

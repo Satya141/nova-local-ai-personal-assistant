@@ -1,6 +1,6 @@
 # NOVA architecture
 
-This describes what exists today (Phases 1 to 3) and records why it is built this way.
+This describes what exists today (Phases 1 to 4) and records why it is built this way.
 
 ## The pieces
 
@@ -128,6 +128,22 @@ Result: 97 of 99 commands exact over three runs (three speeds, background noise)
 
 **Licences.** The Piper engine moved to the GPL-3.0 `piper1-gpl` repository in 2025. The voice is `en_US-ljspeech-high`, trained on the public-domain LJ Speech dataset; `hfc_female` was rejected for its non-commercial licence. NOVA's own licence, still unchosen, has to account for the GPL engine (or swap the synthesiser, which sits behind `Synthesizer`).
 
+### Phase 4: screen understanding
+
+**Capture the user's window, not NOVA.** When the user asks about their screen, NOVA's launcher is on top of it, so a plain screenshot would mostly show NOVA. `nova/vision/capture.py` walks the top-level windows in stacking order, skips NOVA's own and anything minimised or tiny, and takes the first one: the window the user was just in. It asks that window to draw itself with `PrintWindow(PW_RENDERFULLCONTENT)`, which works even where the launcher covers it; if the result is one flat colour (some apps cannot draw that way) it copies the window's area from the screen instead. Verified live on a real window sitting under the launcher. No new dependencies beyond Pillow: the capture is plain Win32 through ctypes.
+
+**Two ways in, both with consent.** The screen button (or the "Explain what's on my screen" chip) is an explicit click, so the screenshot is taken straight away. The `look_at_screen` tool, used when the user asks in words or by voice, is `MEDIUM` risk with confirmation: the model alone can never decide to look. Nothing is captured continuously and no image is stored; the conversation keeps only the text answer.
+
+**qwen3-vl:8b is loaded only for screen questions; qwen3:8b stays the chat model.** The plan was to use the vision model for everything so the GPU never swaps. Measured: at NOVA's 8192-token context qwen3-vl:8b needs 6.9 GB, which does not fit beside the display on an 8 GB card (20% ran on the CPU), and it would slow every chat turn. So it has its own provider with a 4096-token context, enough for a screenshot and a short answer.
+
+**Speed, measured on the eval screens.** 8192 context, uncapped answers: median 9.5 s, worst 56 s. 4096 context: 9.0 s. Plus a 300-token cap and "at most four short sentences": 3.4 s median, 5.6 s worst, same 6/6 accuracy. Shrinking images from 1600 px to 1280 px made nothing faster, so the sharper image stays. Arming the screen button starts loading the vision model while the question is typed.
+
+**The screen button's answer is the reply.** Handing the vision model's answer to the chat model would swap models on the GPU twice (about 6 s each) to rephrase it. The answer is stored as the assistant's reply, so a follow-up question ("how do I fix it?") goes to the chat model with it in context. When asked in words, the chat model calls the tool and answers itself, as with any tool.
+
+**Screen text is data.** The vision prompt says text in the screenshot is content, not instructions, and whatever it returns still passes through the permission gate before anything happens.
+
+**Results.** Vision eval: 12/12 (an editor TypeError with its line, a missing-file dialog, a bar chart, a form with a disabled button, a traceback and its fix, an invoice total and due date). Agent eval: the model calls `look_at_screen` for "the error on my screen" 2/2. One empty reply was seen right after the model loaded; empty answers are retried once.
+
 ## Layout differences from the original plan
 
 The plan listed `inference/`, `voice/`, `vision/` and `sync/` as top-level folders. They are instead subpackages of `backend/nova/` as they get built, so there is a single importable Python package and one virtual environment.
@@ -141,5 +157,6 @@ The plan listed `inference/`, `voice/`, `vision/` and `sync/` as top-level folde
 - No screen yet for browsing or editing all memories, or for the action log; the API endpoints exist for the Phase 10 dashboards.
 - Scheduled agent tasks ("every morning, summarise my email") are not built; they need the Phase 5 integrations to be useful.
 - Clicking the reminder window's buttons was verified through the webview, not with a physical mouse click on the no-activate window.
+- Screen understanding sees one window. A question about something on a second monitor, or spread across windows, only gets the window just below NOVA. The first screen question after idle takes about 15 to 20 s while the vision model loads (and the chat model reloads afterwards).
 - Voice is English only, and was tuned on synthetic speech. It has not yet been measured with a real voice, accent or room. With laptop speakers instead of headphones, NOVA's own voice reaches the microphone; that is harmless unless its reply begins with "Hey Nova".
 - The mic button and the tray toggle were tested live; the full spoken round trip (speak, act, reply aloud) was tested through the pipeline with the real models, not with a person speaking.

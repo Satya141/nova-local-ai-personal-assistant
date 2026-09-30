@@ -10,7 +10,7 @@ from typing import Literal
 from pydantic import BaseModel, Field, model_validator
 
 from nova.database import utc_now
-from nova.scheduler.reminders import ReminderStore, next_occurrence
+from nova.scheduler.reminders import ReminderStore, first_occurrence, next_occurrence
 from nova.tools.base import Tool, ToolResult
 
 # A time a few seconds in the past is "now", not a mistake.
@@ -88,6 +88,10 @@ def reminder_tools(
                 )
             # "Every day at 9" said at 10 starts tomorrow.
             due = next_occurrence(due, args.repeat, now)
+        if args.repeat in ("daily", "weekdays") and due - now < timedelta(days=2):
+            # Near-term dates for repeating reminders are the model's guess; work out the first one here.
+            # A start further out ("starting next month") is taken as meant.
+            due = first_occurrence(due, args.repeat, now)
         reminder = store.create(args.text.strip(), max(due, now), args.repeat)
         on_change()
         return ToolResult(
