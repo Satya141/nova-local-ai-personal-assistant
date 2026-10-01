@@ -21,8 +21,8 @@ from typing import Any
 from nova.tools.base import Risk, Tool
 
 TAINT_WARNING = (
-    "NOVA read a web page or your screen during this request, and that content could contain hidden "
-    "instructions. Only confirm if this is what you asked for."
+    "NOVA read content from outside during this request (a web page, an email, an issue or your screen), "
+    "and it could contain hidden instructions. Only confirm if this is what you asked for."
 )
 
 
@@ -38,9 +38,10 @@ class PermissionGate:
         self._pending: dict[str, asyncio.Future[bool]] = {}
 
     def check(self, tool: Tool, args: Any, tainted: bool = False) -> Decision:
+        risk = tool.risk_for(args) if tool.risk_for is not None else tool.risk
         if tainted and not tool.read_only:
-            return Decision.BLOCK if tool.risk is Risk.HIGH else Decision.CONFIRM
-        if tool.requires_confirmation or tool.risk is not Risk.LOW:
+            return Decision.BLOCK if risk is Risk.HIGH else Decision.CONFIRM
+        if tool.requires_confirmation or risk is not Risk.LOW:
             return Decision.CONFIRM
         if tool.confirm_when is not None and tool.confirm_when(args):
             return Decision.CONFIRM

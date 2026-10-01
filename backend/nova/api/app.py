@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import json
 import secrets
+import webbrowser
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -25,6 +26,7 @@ from nova.config import Settings
 from nova.database import Database, utc_now
 from nova.events import EventBus
 from nova.inference import ModelProvider, OllamaProvider
+from nova.integrations.connections import Connections, IntegrationError
 from nova.memory import ConversationStore, MemoryStore
 from nova.memory.embeddings import OllamaEmbedder
 from nova.memory.extractor import MemoryExtractor
@@ -57,6 +59,17 @@ class SpeakRequest(BaseModel):
     text: str = Field(min_length=1, max_length=8000)
 
 
+class GoogleClientRequest(BaseModel):
+    # The contents of the client file the user downloaded from Google Cloud.
+    client: str = Field(min_length=2, max_length=20000)
+
+
+class GitHubConnectRequest(BaseModel):
+    token: str | None = Field(default=None, max_length=500)
+    # Use the token of the GitHub CLI the user is signed in to.
+    from_cli: bool = False
+
+
 class ConfirmationRequest(BaseModel):
     approved: bool
 
@@ -85,7 +98,9 @@ async def event_stream(
             yield json.dumps(event) + "\n"
 
 
-def create_app(settings: Settings, provider: ModelProvider | None = None) -> FastAPI:
+def create_app(
+    settings: Settings, provider: ModelProvider | None = None, connections: Connections | None = None
+) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         db = Database(settings.database_path)
@@ -124,9 +139,12 @@ def create_app(settings: Settings, provider: ModelProvider | None = None) -> Fas
         scheduler = Scheduler(reminders, bus)
         gate = PermissionGate(settings.confirm_timeout)
         actions = ActionLog(db)
+        registry = build_registry(memory, reminders, scheduler.poke, screen, browser)
+        accounts = connections or Connections(settings.data_dir)
+        accounts.sync(registry)
         agent = Agent(
             model,
-            build_registry(memory, reminders, scheduler.poke, screen, browser),
+            registry,
             gate,
             store,
             memory=memory,
@@ -137,8 +155,11 @@ def create_app(settings: Settings, provider: ModelProvider | None = None) -> Fas
             max_steps=settings.max_steps,
             history_limit=settings.history_limit,
             num_ctx=settings.num_ctx,
+            prompt_note=accounts.prompt_note,
         )
         scheduler.run_task = agent.run_task
+        app.state.connections = accounts
+        app.state.registry = registry
         app.state.provider = model
         app.state.vision = vision
         app.state.bus = bus
@@ -336,6 +357,57 @@ def create_app(settings: Settings, provider: ModelProvider | None = None) -> Fas
         return voice.status()
 
     # --- transparency --------------------------------------------------------
+
+    # --- connected accounts ---------------------------------------------------------
+    # Credentials only ever travel from the user's own launcher to here, and go straight into the
+    # vault. They are never logged, never returned, and never shown to the model.
+
+    def connections_changed(request: Request) -> None:
+        request.app.state.connections.sync(request.app.state.registry)
+        request.app.state.bus.publish({"type": "connections", "status": request.app.state.connections.status()})
+
+    @app.get("/api/connections")
+    async def connection_status(request: Request) -> dict:
+        return request.app.state.connections.status()
+
+    @app.post("/api/connections/google/client")
+    async def google_client(body: GoogleClientRequest, request: Request) -> dict:
+        try:
+            request.app.state.connections.google.set_client(body.client)
+        except IntegrationError as exc:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
+        return request.app.state.connections.status()
+
+    @app.post("/api/connections/google/connect")
+    async def google_connect(request: Request) -> dict:
+        """Open Google's consent page in the user's browser; the result arrives as a `connections` event."""
+        try:
+            url = await request.app.state.connections.google.start_sign_in(on_done=lambda: connections_changed(request))
+        except IntegrationError as exc:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
+        await asyncio.to_thread(webbrowser.open, url)
+        return {"status": "signing_in"}
+
+    @app.post("/api/connections/github")
+    async def github_connect(body: GitHubConnectRequest, request: Request) -> dict:
+        try:
+            await request.app.state.connections.github.connect(body.token, from_cli=body.from_cli)
+        except IntegrationError as exc:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
+        connections_changed(request)
+        return request.app.state.connections.status()
+
+    @app.delete("/api/connections/{service}")
+    async def disconnect(service: str, request: Request) -> dict:
+        accounts: Connections = request.app.state.connections
+        if service == "google":
+            await accounts.google.disconnect()
+        elif service == "github":
+            accounts.github.disconnect()
+        else:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "No such service")
+        connections_changed(request)
+        return accounts.status()
 
     @app.get("/api/actions")
     async def recent_actions(request: Request, limit: int = 50) -> dict:

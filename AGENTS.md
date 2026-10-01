@@ -18,6 +18,7 @@ backend/                 Python 3.12, FastAPI. All agent logic lives here.
   nova/voice/            microphone, voice activity, wake phrase + Whisper, Piper, the voice service
   nova/vision/           capturing the user's window and asking the vision model about it
   nova/browser/          NOVA's own Edge window (Playwright), page reading and search
+  nova/integrations/     the user's Google and GitHub accounts, sign-in, the DPAPI vault, which tools are live
   nova/settings.py       persistent user settings (e.g. wake word on/off)
   nova/api/              HTTP API (token-protected, loopback only) and the event stream
   nova/database.py       the SQLite file and its migrations
@@ -71,21 +72,21 @@ Run the evals after any change to a prompt, a tool description, the memory pipel
 15. **Unattended runs never act on consent.** A scheduled task runs with `unattended=True`: anything the gate would ask about is declined, not approved. Setting a task up is what the user confirms.
 16. **Keep tool results small.** Ollama silently cuts an oversized prompt from the front, question included. Return what the model needs (see `compact_page`), keep bulky data out of `content` (`ToolResult.vouches` exists for addresses), and leave `fit_context` in the loop.
 17. **Schema changes are new migrations.** Append to `MIGRATIONS` in `nova/database.py`; never edit one that has shipped.
-18. **No secrets in source.** Credentials come from environment variables.
+18. **No secrets in source, and credentials stay in the vault.** Account tokens live only in `nova/integrations/vault.py` (DPAPI). Never log them, return them from the API, put them in the database or action log, or show them to the model. Sign-in happens on the provider's own page; NOVA never handles passwords. Sending mail, inviting guests and posting publicly are `HIGH`.
 19. **Windows stay on NOVA's pages.** The shell's navigation guard opens web links in the user's browser; do not remove it or load remote content into a NOVA window.
 20. **Tests accompany behaviour changes.** New tools need tests for their matching and refusal logic; anything touching the gate needs an agent-loop test.
 
 ## Adding a tool
 
 1. Write a Pydantic args model, an async handler returning `ToolResult`, and a `Tool(...)` in `backend/nova/tools/`. Tools that need a store are built by a factory function (see `tools/memory.py`).
-2. Set `risk` and `requires_confirmation` truthfully. Deleting, sending, closing, buying: confirm. Set `read_only` if it changes nothing, `reads_untrusted` if its result contains outside content, `url_arg` if it opens an address, and `confirm_when` for tools that are safe only for some arguments (see `click_element`).
+2. Set `risk` and `requires_confirmation` truthfully. Deleting, sending, closing, buying: confirm. Set `read_only` if it changes nothing, `reads_untrusted` if its result contains outside content, `url_arg` if it opens an address, `confirm_when` for tools that are safe only for some arguments (see `click_element`), and `risk_for` when the arguments change the risk (see `calendar_add`). A tool for a connected account goes in `Connections` (`nova/integrations/connections.py`), not `build_registry()`.
 3. Register it in `build_registry()` in `backend/nova/tools/__init__.py`.
 4. Give it a character in `TOOL_OWNERS` in `apps/desktop/src/components/transcript.tsx` (or leave it to Nova).
 5. Add tests, add an eval scenario with a sandboxed stand-in if it touches the computer, then try it for real through the launcher.
 
 ## The characters
 
-Nova (the assistant and its memory), Ember (apps), Fern (files), Plum (closing and deleting things), Chime (reminders), Iris (the screen) and Wren (the web) are NOVA's own designs.
+Nova (the assistant, its memory and your email), Ember (apps and GitHub), Fern (files), Plum (closing and deleting things), Chime (reminders and your calendar), Iris (the screen) and Wren (the web) are NOVA's own designs.
 A character keeps its colour in every state; status is shown by its face, motion and a small mark.
 All visuals are in `apps/desktop/src/app/character.css`. Check changes on `/gallery` in both light and dark themes, and keep the `prefers-reduced-motion` block working.
 
@@ -99,4 +100,4 @@ Processes started from inside a sandboxed (MSIX-packaged) host see a private cop
 
 ## Current scope
 
-Phases 1 to 4 are done, and so are the web, file and scheduled-task parts of Phase 5. Not built yet: the account integrations Gmail, Calendar and GitHub (the rest of 5, which needs the user's sign-in), mobile (6), sync (7), distributed inference (8), the life timeline (9). A trained wake-word model could replace the speech-recognition wake check later; `Transcriber.find_wake` is the seam. Do not start those without being asked, and do not add abstractions for them in advance.
+Phases 1 to 5 are done. The Gmail, Calendar and GitHub tools have not yet been run against the real services; that waits for the user to connect them. Not built yet: mobile (6), sync (7), distributed inference (8), the life timeline (9). A trained wake-word model could replace the speech-recognition wake check later; `Transcriber.find_wake` is the seam. Do not start those without being asked, and do not add abstractions for them in advance.

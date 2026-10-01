@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import sys
 from datetime import timedelta
 
 import pytest
@@ -82,6 +83,41 @@ def test_a_reminder_or_task_can_be_cancelled_from_the_panel(client):
     assert client.get("/api/reminders", headers=AUTH).json()["upcoming"] == []
     assert client.post("/api/reminders/999/cancel", headers=AUTH).status_code == 404
     assert client.post(f"/api/reminders/{task.id}/cancel").status_code == 401
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="the vault uses Windows DPAPI")
+def test_connecting_github_adds_its_tools_and_disconnecting_removes_them(tmp_path):
+    import httpx
+
+    from nova.integrations.connections import Connections
+    from nova.integrations.github import GitHubAccount
+    from nova.integrations.vault import Vault
+
+    def fake_github(request: httpx.Request) -> httpx.Response:
+        ok = request.headers.get("authorization") == "Bearer good"
+        return httpx.Response(200, json={"login": "satya"}) if ok else httpx.Response(401, json={"message": "Bad credentials"})
+
+    vault = Vault(tmp_path / "connections")
+    github = GitHubAccount(
+        vault, http=lambda: httpx.AsyncClient(base_url="https://api.github.com", transport=httpx.MockTransport(fake_github))
+    )
+    settings = Settings(api_token=TOKEN, data_dir=tmp_path, embed_model="", voice=False, vision_model="", browser=False)
+    with TestClient(create_app(settings, FakeProvider([]), Connections(tmp_path, github=github))) as client:
+        registry = client.app.state.registry
+        assert client.get("/api/connections", headers=AUTH).json()["github"]["connected"] is False
+        assert "github_search" not in registry.names()
+
+        refused = client.post("/api/connections/github", json={"token": "bad"}, headers=AUTH)
+        assert refused.status_code == 400 and "did not accept" in refused.json()["detail"]
+        connected = client.post("/api/connections/github", json={"token": "good"}, headers=AUTH).json()
+        assert connected["github"] == {"connected": True, "account": "satya", "cli": connected["github"]["cli"]}
+        assert "github_search" in registry.names()
+        assert "token" not in json.dumps(connected), "a credential never comes back out"
+
+        assert client.delete("/api/connections/github", headers=AUTH).json()["github"]["connected"] is False
+        assert "github_search" not in registry.names()
+        assert client.delete("/api/connections/dropbox", headers=AUTH).status_code == 404
+        assert client.post("/api/connections/github", json={"token": "good"}).status_code == 401
 
 
 def test_voice_endpoints_when_voice_is_off(client):

@@ -49,6 +49,9 @@ class Tool:
     read_only: bool = False
     # Returns content NOVA does not control (web pages, the screen), which may try to give orders.
     reads_untrusted: bool = False
+    # For tools whose risk depends on the arguments: an event with guests sends them email, which
+    # makes it HIGH; the same event for the user alone is MEDIUM. Decided by code, never the model.
+    risk_for: Callable[[Any], Risk] | None = None
     # The argument holding a web address. After untrusted input, an address that neither the user
     # nor a page NOVA read supplied needs confirming: it could smuggle data out in the URL.
     url_arg: str | None = None
@@ -92,6 +95,10 @@ class ToolRegistry:
         if tool.name in self._tools:
             raise ValueError(f"Tool '{tool.name}' is already registered")
         self._tools[tool.name] = tool
+
+    def unregister(self, name: str) -> None:
+        """Remove a tool, e.g. when the account it uses is disconnected. Unknown names are ignored."""
+        self._tools.pop(name, None)
 
     def replace(self, tool: Tool) -> None:
         """Swap in a different implementation of a registered tool (evaluations use this)."""

@@ -4,7 +4,7 @@
 
 NOVA is an open-source, local-first AI personal assistant. It runs a language model on your own computer, and it acts: ask it to open an app, find a file or remind you of something and it does that, rather than telling you how.
 
-This repository is partway through **Phase 5**: a Windows desktop agent with long-term memory, reminders, voice, screen understanding, web browsing and file organising. Account integrations (Gmail, Calendar, GitHub), the phone app, shared memory and distributed inference are planned and not built yet.
+This repository is at **Phase 5**: a Windows desktop agent with long-term memory, reminders, voice, screen understanding, web browsing, file organising, scheduled tasks, and your Gmail, Google Calendar and GitHub. The phone app, shared memory and distributed inference are planned and not built yet.
 
 ![NOVA reading an error from the window behind it](docs/screenshots/screen.png)
 
@@ -25,6 +25,7 @@ NOVA's characters show what it is doing. Nova is the assistant and keeps its mem
   - find files and folders by name, and open them
   - organise folders: "sort my Downloads into folders by type", rename, move, and delete to the Recycle Bin (each asks first)
   - search the web, open sites, read pages and follow links ("what's the latest Python version?", "open python.org and find the release notes")
+  - your email, calendar and GitHub once connected: "do I have any unread email?", "reply to Priya and say Friday works" (saved as a draft), "what's on my calendar tomorrow?", "put the dentist on my calendar at 3", "is anything waiting for me on GitHub?"
   - do work later by itself and show you the result ("every morning at 8, search the web for AI news and give me a short summary"); nothing that needs your OK happens while you are away
   - set, list and cancel reminders, one-off or repeating ("every weekday at 9 remind me to stretch")
 - **Reminders** pop up in the corner of the screen without stealing focus, survive restarts, and show up as missed if NOVA was closed when they were due. Snooze or dismiss them there.
@@ -48,6 +49,21 @@ pnpm --dir apps/desktop tauri dev
 The first command creates the Python environment, installs dependencies and downloads the models (about 12 GB: the chat and vision models through Ollama, plus 330 MB of voice models in `backend\models`). The second starts NOVA; press Alt+Space.
 
 If another app already uses Alt+Space, NOVA takes Ctrl+Alt+Space instead and shows that in the launcher's footer and the tray tooltip.
+
+## Connect your accounts
+
+Press **Ctrl M** in the launcher and look under **Connections**. NOVA never sees your passwords: you sign in on Google's own page, and GitHub access comes from your GitHub CLI or a token you create. Credentials are encrypted with Windows (DPAPI) for your Windows account only, and never reach the model or the logs. Disconnect at any time; for Google that also revokes NOVA's access.
+
+**GitHub.** Click **Use my GitHub CLI login** if you have run `gh auth login`, or **Paste a token**: a classic token with the `repo` and `notifications` scopes covers everything (a fine-grained token works too, except for notifications).
+
+**Gmail and Google Calendar.** Google requires each user of a self-hosted app like NOVA to bring their own OAuth client. Once:
+1. In the [Google Cloud console](https://console.cloud.google.com/), create a project.
+2. Under *APIs & Services → Library*, enable the **Gmail API** and the **Google Calendar API**.
+3. Under *APIs & Services → OAuth consent screen*, choose *External*, fill in an app name (NOVA) and your email, and add yourself under *Test users*.
+4. Under *APIs & Services → Credentials*, create an **OAuth client ID** of type **Desktop app** and download its JSON file.
+5. In NOVA: **Add client file**, choose that file, then **Connect** and sign in in your browser. Tick every permission.
+
+While the Google app is in *Testing*, Google ends the sign-in after 7 days and NOVA asks you to connect again. NOVA asks for: reading mail, drafting and sending mail (each send confirmed), and reading and adding calendar events.
 
 ## Configuration
 
@@ -73,6 +89,7 @@ Set these environment variables before starting NOVA.
 - Inference, memory, tools and voice all run locally. The interface makes no network requests of its own, and speech models load strictly offline. The only traffic to the internet is the web pages you ask NOVA to search or open.
 - NOVA browses in its own visible Edge window with a separate profile that is signed out of everything, so it cannot act on your accounts. Buttons, forms and typing ask first; plain links do not.
 - Text on web pages and the screen is treated as untrusted. If a request read any, every action that changes something in that request asks first with a warning, and deleting is blocked. This is enforced in code, because the model alone obeyed a page telling it to delete files.
+- Email, calendar invitations and GitHub issues are written by other people, so NOVA treats them like web pages. Sending an email, inviting someone or posting on GitHub always asks first, and after NOVA has read mail, an issue or a page in the same request it refuses outright; answering an email is saved as a draft unless you say to send it.
 - Deleting files only ever moves them to the Recycle Bin, and NOVA never touches AppData or moves your standard folders.
 - NOVA looks at your screen only when you press the screen button, or confirm when it asks. It captures one window, answers, and keeps nothing: screenshots are never saved.
 - The microphone is off until you turn on "Hey Nova" or press the mic button. Audio is never recorded to disk or sent anywhere; NOVA keeps at most the utterance it is currently listening to, in memory. Speech that does not start with "Hey Nova" is discarded.
@@ -84,7 +101,7 @@ Set these environment variables before starting NOVA.
 
 ## Quality
 
-The agent is measured against the real local models, not only unit-tested. `backend/evals` runs realistic requests with the computer-facing tools sandboxed. Current results on qwen3:8b: 99/99 agent task runs (including a web page that tries to make NOVA delete files) and 38/38 memory-extraction cases. Screen understanding with qwen3-vl:8b answered 12 of 12 questions about realistic screens (an editor error, a dialog, a chart, a form, a traceback, an invoice), about 3 to 8 s each once loaded. The voice pipeline, fed synthetic speech at three speeds with background noise, heard 97 of 99 commands exactly and never woke on the 36 sentences that were not meant for it; a command is ready about 0.7 s after you stop speaking. See [AGENTS.md](AGENTS.md) for how to run them.
+The agent is measured against the real local models, not only unit-tested. `backend/evals` runs realistic requests with the computer-facing tools sandboxed. Current results on qwen3:8b: 126/126 agent task runs (42 scenarios, every account connected) (including a web page that tries to make NOVA delete files) and 38/38 memory-extraction cases. Screen understanding with qwen3-vl:8b answered 12 of 12 questions about realistic screens (an editor error, a dialog, a chart, a form, a traceback, an invoice), about 3 to 8 s each once loaded. The voice pipeline, fed synthetic speech at three speeds with background noise, heard 97 of 99 commands exactly and never woke on the 36 sentences that were not meant for it; a command is ready about 0.7 s after you stop speaking. See [AGENTS.md](AGENTS.md) for how to run them.
 
 ## Licences of what NOVA uses
 

@@ -1,6 +1,7 @@
 import { type ReactNode, useCallback, useEffect, useState } from "react";
 
 import { Character, type CharacterKind } from "@/components/character";
+import { ConnectionsSection } from "@/components/connections";
 import { toolOwner } from "@/components/transcript";
 import {
   type Action,
@@ -61,11 +62,11 @@ function when(reminder: Reminder): string {
   return `${day}, ${clock}${repeat ? ` · ${repeat}` : ""}`;
 }
 
-function Section({ title, count, children }: { title: string; count: number; children: ReactNode }) {
+function Section({ title, count, children }: { title: string; count?: number; children: ReactNode }) {
   return (
     <section className="flex flex-col gap-1">
       <h2 className="px-1 text-[11px] font-medium uppercase tracking-wide text-text-muted">
-        {title} <span className="tabular-nums">· {count}</span>
+        {title} {count !== undefined && <span className="tabular-nums">· {count}</span>}
       </h2>
       {children}
     </section>
@@ -173,6 +174,9 @@ export function KnownPanel() {
             />
           ))
         )}
+      </Section>
+      <Section title="Connections">
+        <ConnectionsSection />
       </Section>
       {actions.length > 0 && (
         <Section title="Recent actions" count={actions.length}>

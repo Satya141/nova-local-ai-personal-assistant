@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.6.0 (Phase 5 complete: Gmail, Google Calendar, GitHub) - 2026-10-01
+
+Connect your accounts under Ctrl M → Connections, then ask "do I have any unread email?", "reply to Priya and say Friday works", "what's on my calendar tomorrow?" or "is anything waiting for me on GitHub?".
+
+### Accounts
+- **Google** (Gmail and Calendar): Google's sign-in for installed apps, in your own browser, with PKCE; NOVA listens once on 127.0.0.1 for the answer. Bring your own "Desktop app" OAuth client (steps in the README).
+- **GitHub**: your GitHub CLI login, on your click, or a token you paste. NOVA checks it with GitHub first.
+- Credentials are encrypted with Windows DPAPI for your Windows account and never reach the model, the logs or the action log. Disconnecting deletes them, and revokes Google's grant.
+- A service's tools exist only while it is connected (11 tools would otherwise cost every turn about 900 tokens of context). When one is not connected, NOVA says how to connect it.
+
+### Tools
+- Gmail: `email_search`, `email_read`, `email_draft`, `email_send`. Replies are saved as drafts unless you say to send; the confirmation shows the recipients, subject and how the message starts.
+- Calendar: `calendar_events`, `calendar_add`.
+- GitHub: `github_activity` (notifications), `github_search`, `github_read`, `github_comment`, `github_new_issue`.
+
+### Safety
+- Mail, invitations, issues and comments are untrusted, like web pages.
+- Sending, inviting guests and posting on GitHub are HIGH risk: always confirmed, and refused outright after NOVA read outside content in the same request. Inviting guests is HIGH only when there are guests: tools can now set their risk from their arguments (`risk_for`).
+- Scheduled tasks can read your mail ("every morning, summarise my unread email") but never send.
+
+### Quality
+- New agent scenarios: unread mail, a reply that must be a draft, an explicit send, an email that tries to make NOVA mail your subjects to a stranger, tomorrow's calendar, adding an event, GitHub reviews, and an unattended email summary. 126/126 on qwen3:8b (42 scenarios, 3 runs each, with every account's tools in the prompt).
+- Tests against fake Google and GitHub servers: the full sign-in round trip (including a forged callback), token refresh and revocation, every tool's requests, and the gate's decisions.
+- The eval's "read the page again" stand-in now returns the open page, as the real browser does.
+
 ## 0.5.1 (Phase 5: scheduled tasks) - 2026-10-01
 
 NOVA can do work by itself later and show you the result: "every morning at 8, search the web for AI news and give me a short summary".

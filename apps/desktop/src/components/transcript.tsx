@@ -26,6 +26,18 @@ const TOOL_OWNERS: Record<string, CharacterKind> = {
   read_web_page: "wren",
   click_element: "wren",
   type_into: "wren",
+  // The user's accounts: mail is Nova's, the calendar Chime's (it keeps time), GitHub Ember's (it runs things).
+  email_search: "nova",
+  email_read: "nova",
+  email_draft: "nova",
+  email_send: "nova",
+  calendar_events: "chime",
+  calendar_add: "chime",
+  github_activity: "ember",
+  github_search: "ember",
+  github_read: "ember",
+  github_comment: "ember",
+  github_new_issue: "ember",
 };
 
 export function toolOwner(name: string): CharacterKind {

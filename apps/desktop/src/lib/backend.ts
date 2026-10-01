@@ -182,6 +182,35 @@ export async function listActions(limit = 15): Promise<Action[]> {
   return (await response.json()).actions;
 }
 
+export type Connections = {
+  google: { client: boolean; connected: boolean; account: string | null; signing_in: boolean; error: string | null };
+  github: { connected: boolean; account: string | null; cli: boolean };
+};
+
+async function connectionCall(path: string, init: RequestInit = {}): Promise<Connections> {
+  const response = await request(path, init);
+  const body = await response.json().catch(() => null);
+  if (!response.ok) throw new Error(body?.detail ?? `HTTP ${response.status}`);
+  return body;
+}
+
+export const connectionStatus = () => connectionCall("/api/connections");
+/** The JSON file of the user's own Google "Desktop app" OAuth client. */
+export const setGoogleClient = (client: string) =>
+  connectionCall("/api/connections/google/client", { method: "POST", body: JSON.stringify({ client }) });
+/** Opens Google's sign-in in the user's browser; poll connectionStatus for the outcome. */
+export const connectGoogle = async () => {
+  const response = await request("/api/connections/google/connect", { method: "POST" });
+  if (!response.ok) throw new Error((await response.json().catch(() => null))?.detail ?? `HTTP ${response.status}`);
+};
+export const connectGitHub = (options: { token?: string; fromCli?: boolean }) =>
+  connectionCall("/api/connections/github", {
+    method: "POST",
+    body: JSON.stringify({ token: options.token ?? null, from_cli: options.fromCli ?? false }),
+  });
+export const disconnectService = (service: "google" | "github") =>
+  connectionCall(`/api/connections/${service}`, { method: "DELETE" });
+
 export async function listReminders(): Promise<{ upcoming: Reminder[]; pending: Reminder[] }> {
   const response = await request("/api/reminders");
   if (!response.ok) throw new Error(`Backend returned HTTP ${response.status}`);

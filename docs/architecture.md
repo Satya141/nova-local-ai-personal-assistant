@@ -1,6 +1,6 @@
 # NOVA architecture
 
-This describes what exists today (Phases 1 to 4, and the web and file part of Phase 5) and records why it is built this way.
+This describes what exists today (Phases 1 to 5) and records why it is built this way.
 
 ## The pieces
 
@@ -168,6 +168,18 @@ Read-only tools stay free, so reading and summarising pages is not slowed down. 
 
 **Links leave NOVA.** Replies are Markdown, so they contain links; clicking one used to navigate the launcher itself to the site. An inline Tauri plugin (`navigation_guard` in `src-tauri/src/lib.rs`) keeps every window on NOVA's own pages and hands http and https links to the default browser through `url.dll` (one argument, no shell); other schemes are refused.
 
+### Phase 5, part 2: accounts
+
+**Bring your own Google client.** Gmail and Calendar scopes are "restricted"/"sensitive" to Google: an app shipping one shared OAuth client would need Google's verification and a security assessment, and every user's mail would flow through that one client's quota. A self-hosted assistant instead uses each user's own "Desktop app" client, created once in their own Cloud project (README). The client file is uploaded through the launcher and kept in the vault. Google's installed-app flow is used as designed: system browser, loopback redirect on a random port, PKCE (S256) and a random `state`; a callback with the wrong state is refused, so another page cannot finish a sign-in. While the user's Google app is in Testing, Google expires refresh tokens after 7 days; an `invalid_grant` drops the connection and NOVA says to reconnect.
+
+**No client libraries.** Gmail, Calendar and GitHub are plain JSON over HTTPS, so `httpx` (already a dependency) is enough; Google's Python client would have added tens of megabytes for a handful of calls.
+
+**The vault.** `nova/integrations/vault.py` encrypts each credential with `CryptProtectData` (DPAPI, current user, with NOVA-specific entropy) into `connections/<name>.bin` in the data folder. A file copied to another account or machine cannot be decrypted, and an unreadable one counts as "not connected". Credentials never enter the database, the action log, logs, API responses or prompts.
+
+**Tools follow the connection.** `Connections.sync` registers a service's tools when it connects and removes them when it disconnects (or when Google reports the grant revoked). Measured: the fixed prompt is 3,613 tokens without accounts and 4,540 with all three, out of 8,192, so carrying tools that cannot work would cost real room. The system prompt names what is not connected, so "check my email" gets an honest "connect it under Ctrl M" instead of a guess.
+
+**Mail and issues are untrusted; sending is HIGH.** Reading tools set `reads_untrusted`. `email_send`, `github_comment` and `github_new_issue` publish under the user's name, so they are HIGH: always confirmed, and blocked after untrusted content in the same request, which stops an email from making NOVA forward mail. Answering an email therefore goes through `email_draft` (MEDIUM: a warned confirmation after reading), and the prompt makes drafts the default. Calendar events are MEDIUM unless they have guests, who receive email: `Tool.risk_for` lets a tool's risk depend on its arguments, still decided in code. Unattended scheduled tasks never get a confirmation, so they can read and summarise but not send. An eval email that tells NOVA to mail the user's subjects to a stranger is ignored 4/4 with the attack visible in the search results themselves.
+
 **Memories travel with the question.** Adding ten tools made recall fail (1/6): qwen3's chat template puts the tool list after the system prompt, so remembered facts ended up thousands of tokens before the question. Memories are now prepended to the latest user message, for the model only (the stored message is unchanged), and recall is back to 6/6.
 
 ## Layout differences from the original plan
@@ -182,7 +194,7 @@ The plan listed `inference/`, `voice/`, `vision/` and `sync/` as top-level folde
 - One conversation at a time in the launcher; a fresh one starts after 20 idle minutes, and older ones are stored but not browsable yet. Memory carries across conversations.
 - The launcher's Memory & reminders panel (Ctrl M) lists and removes memories, reminders and tasks and shows the 15 most recent actions, but memories cannot be edited there and older actions are only in `GET /api/actions`.
 - Scheduled tasks can only use what needs no confirmation (the web, reading files, reminders); "every morning, summarise my email" waits for the account integrations. A task only runs while NOVA is running; one missed while it was closed runs when it starts.
-- Gmail, Calendar and GitHub are not connected yet; they need the user's sign-in and an OAuth design of their own.
+- Gmail, Calendar and GitHub were verified against fake servers and the real model with stand-ins, not yet against the real services: that needs the user's own sign-in. Google requires the user's own OAuth client, and in Testing mode signs NOVA out every 7 days. Mail search reads up to 25 messages and each email's first 3,000 characters; attachments are not read.
 - The browser reads a page once it has loaded its HTML; pages that build their content slowly afterwards may read as nearly empty until read again. Search engines may still ask NOVA's window to confirm a person is searching; NOVA reports it and the user can complete it there.
 - File organising works on names and types, not contents, and only the first 200 entries of a folder are listed (the result says when a listing is incomplete).
 - Clicking the reminder window's buttons was verified through the webview, not with a physical mouse click on the no-activate window.
