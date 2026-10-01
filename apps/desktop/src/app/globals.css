@@ -57,6 +57,19 @@ body {
   cursor: default;
 }
 
+/* The phone app fills the screen and keeps clear of the notch and the gesture bar. */
+.phone-shell {
+  height: 100dvh;
+  padding-top: env(safe-area-inset-top);
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+  user-select: auto;
+}
+
+.phone-composer {
+  padding-bottom: max(10px, env(safe-area-inset-bottom));
+}
+
 .selectable {
   user-select: text;
   cursor: auto;

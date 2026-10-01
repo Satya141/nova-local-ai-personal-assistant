@@ -75,24 +75,113 @@ export type ServerEvent =
   // An empty text means NOVA was listening but caught nothing.
   | { type: "voice_command"; text: string; source: "wake" | "button" }
   | { type: "voice_error"; message: string }
+  // Phone access changed by itself (the PC moved to another network). Only sent to the PC.
+  | { type: "phones"; status: PhoneAccessStatus }
   | { type: "ping" };
 
 let cached: Promise<Session> | null = null;
 
-export function session(): Promise<Session> {
-  if (!isTauri()) {
-    return Promise.reject(new Error("NOVA's interface only works inside the desktop app."));
+// --- the phone app ----------------------------------------------------------------------
+// On a phone the UI is served by NOVA itself, so the backend is this page's own origin, and
+// the key is the one this phone received when it was paired.
+
+const PHONE_KEY = "nova-phone-key";
+
+/** Running as the phone app (served by NOVA over the home network), not inside the desktop shell. */
+export function isPhone(): boolean {
+  return !isTauri() && typeof window !== "undefined" && window.location.pathname.startsWith("/phone");
+}
+
+export class NotPaired extends Error {
+  constructor() {
+    super("This phone is not paired with NOVA.");
   }
-  return (cached ??= invoke<Session>("session"));
+}
+
+function phoneKey(): string | null {
+  try {
+    return localStorage.getItem(PHONE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+export function forgetPhoneKey(): void {
+  try {
+    localStorage.removeItem(PHONE_KEY);
+  } catch {
+    // Nothing stored, or storage blocked: the phone simply asks to pair again.
+  }
+}
+
+/** Trade the six-digit code shown on the PC for this phone's own key. */
+export async function pairPhone(code: string, name: string): Promise<void> {
+  const response = await fetch("/api/pair", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ code, name }),
+  });
+  const body = await response.json().catch(() => null);
+  if (!response.ok) throw new Error(body?.detail ?? `HTTP ${response.status}`);
+  localStorage.setItem(PHONE_KEY, body.token);
+}
+
+export function session(): Promise<Session> {
+  if (isTauri()) return (cached ??= invoke<Session>("session"));
+  if (isPhone()) {
+    const token = phoneKey();
+    return token ? Promise.resolve({ url: "", token, error: null, shortcut: "" }) : Promise.reject(new NotPaired());
+  }
+  return Promise.reject(new Error("NOVA's interface only works inside the desktop app or the phone app."));
 }
 
 async function request(path: string, init: RequestInit = {}): Promise<Response> {
   const { url, token } = await session();
-  return fetch(url + path, {
+  const response = await fetch(url + path, {
     ...init,
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
   });
+  // The PC removed this phone: drop the key, so the app asks to pair again.
+  if (response.status === 401 && isPhone()) {
+    forgetPhoneKey();
+    throw new NotPaired();
+  }
+  return response;
 }
+
+// --- phone access, managed on the PC -------------------------------------------------------
+
+export type PhoneDevice = { id: number; name: string; created_at: string; last_seen: string | null };
+export type PhoneAccessStatus = {
+  enabled: boolean;
+  running: boolean;
+  /** The setup page a phone opens first (plain HTTP); it hands over to `app_url`. */
+  url: string | null;
+  /** The phone app itself, over HTTPS with NOVA's own certificate, at this network's address. */
+  app_url: string | null;
+  /** The phone app at NOVA's .local name: the same on every Wi-Fi, so a phone pairs once. */
+  name_url: string | null;
+  /** The network the PC is on, as Windows classifies it ("Public" blocks phones). */
+  network: { name: string; category: string } | null;
+  /** NOVA's certificate authority, as the phone shows it: its name and the start of its fingerprint. */
+  certificate: { name: string; fingerprint: string } | null;
+  error: string | null;
+  devices: PhoneDevice[];
+};
+
+async function phoneCall<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const response = await request(path, init);
+  const body = await response.json().catch(() => null);
+  if (!response.ok) throw new Error(body?.detail ?? `HTTP ${response.status}`);
+  return body;
+}
+
+export const phoneStatus = () => phoneCall<PhoneAccessStatus>("/api/phone");
+export const setPhoneAccess = (enabled: boolean) =>
+  phoneCall<PhoneAccessStatus>("/api/phone", { method: "POST", body: JSON.stringify({ enabled }) });
+export const newPairingCode = () =>
+  phoneCall<{ code: string; expires_in: number; url: string; qr: string | null }>("/api/phone/code", { method: "POST" });
+export const removePhone = (id: number) => phoneCall<PhoneAccessStatus>(`/api/phone/devices/${id}`, { method: "DELETE" });
 
 /** Parse a newline-delimited JSON body. A network chunk can end mid-line. */
 async function* readLines<T>(body: NonNullable<Response["body"]>): AsyncGenerator<T> {

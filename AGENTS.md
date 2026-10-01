@@ -19,6 +19,7 @@ backend/                 Python 3.12, FastAPI. All agent logic lives here.
   nova/vision/           capturing the user's window and asking the vision model about it
   nova/browser/          NOVA's own Edge window (Playwright), page reading and search
   nova/integrations/     the user's Google and GitHub accounts, sign-in, the DPAPI vault, which tools are live
+  nova/phone/            phone access: the home-network listener, paired devices, pairing codes
   nova/settings.py       persistent user settings (e.g. wake word on/off)
   nova/api/              HTTP API (token-protected, loopback only) and the event stream
   nova/database.py       the SQLite file and its migrations
@@ -29,7 +30,7 @@ backend/                 Python 3.12, FastAPI. All agent logic lives here.
   models/                downloaded Whisper and Piper models (git-ignored; scripts/setup.ps1)
 apps/desktop/            Tauri 2 shell + Next.js 16 UI. A thin client.
   src-tauri/src/         tray, global shortcut, launcher and reminder windows, backend supervisor
-  src/app/               launcher page, /toast reminder window, /gallery design reference
+  src/app/               launcher page, /toast reminder window, /phone app, /gallery design reference
   src/components/        characters, icons, transcript, reminder card, memory & reminders panel
   src/lib/               backend client and the conversation state hook
 scripts/setup.ps1        one-time dev setup
@@ -61,7 +62,7 @@ Run the evals after any change to a prompt, a tool description, the memory pipel
 4. **Tools report honestly.** A result says what actually happened. If a name was fuzzy-matched, say which app was really opened. The system prompt forbids claiming an action that no tool result confirms.
 5. **The model does not do calendar arithmetic.** It is wrong too often (it called 8 October 2026 a Friday). Prompts carry an explicit day list (`nova.dates.upcoming_days`), and weekday phrases in memories are resolved in code (`resolve_weekdays`).
 6. **Memory safety lives in code.** `looks_sensitive` refuses secrets and ID numbers for every memory; the extractor also drops short-lived facts. Do not move these checks into prompts.
-7. **The API stays private.** It binds to loopback and every route requires the per-launch bearer token the shell generates. Keep both.
+7. **The API stays private.** It binds to loopback and every route requires the per-launch bearer token the shell generates. Keep both. Phone access is the one exception and is opt-in: an HTTPS listener on the home network, decided in `authorize` by the listener a request came in on, accepting only paired phones from private addresses; the plain-HTTP setup listener serves only the setup page and NOVA's certificate. Keep NOVA's certificate authority name-constrained to private addresses and its key in the vault. New routes that touch credentials, the PC's hardware or phone access itself go in `_DESKTOP_ONLY`.
 8. **Clients stay thin.** No agent logic in the desktop app. The UI renders the event streams documented at the top of `backend/nova/agent/loop.py` and in `backend/nova/api/app.py`; if you change those events, update `apps/desktop/src/lib/backend.ts` to match.
 9. **No hard-coded model names** outside `backend/nova/config.py`. Everything model-specific goes behind `ModelProvider` or `Embedder`.
 10. **The screen is looked at only on request.** The screen button (a click is consent) or a confirmed `look_at_screen` call; never on the model's own initiative, never continuously, and screenshots are never stored. Capture targets the user's window, never NOVA's own.
@@ -100,4 +101,4 @@ Processes started from inside a sandboxed (MSIX-packaged) host see a private cop
 
 ## Current scope
 
-Phases 1 to 5 are done. The Gmail, Calendar and GitHub tools have not yet been run against the real services; that waits for the user to connect them. Not built yet: mobile (6), sync (7), distributed inference (8), the life timeline (9). A trained wake-word model could replace the speech-recognition wake check later; `Transcriber.find_wake` is the seam. Do not start those without being asked, and do not add abstractions for them in advance.
+Phases 1 to 6 are done (6 as a phone web app over the home Wi-Fi, chosen with the user, encrypted with NOVA's own certificate and paired by QR code). The Gmail, Calendar and GitHub tools have not yet been run against the real services, and the phone app not yet on the user's real phone. Not built yet: sync and access beyond the Wi-Fi (7), distributed inference (8), the life timeline (9). A trained wake-word model could replace the speech-recognition wake check later; `Transcriber.find_wake` is the seam. Do not start those without being asked, and do not add abstractions for them in advance.

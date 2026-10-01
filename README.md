@@ -4,7 +4,7 @@
 
 NOVA is an open-source, local-first AI personal assistant. It runs a language model on your own computer, and it acts: ask it to open an app, find a file or remind you of something and it does that, rather than telling you how.
 
-This repository is at **Phase 5**: a Windows desktop agent with long-term memory, reminders, voice, screen understanding, web browsing, file organising, scheduled tasks, and your Gmail, Google Calendar and GitHub. The phone app, shared memory and distributed inference are planned and not built yet.
+This repository is at **Phase 6**: a Windows desktop agent with long-term memory, reminders, voice, screen understanding, web browsing, file organising, scheduled tasks, your Gmail, Google Calendar and GitHub, and a phone app for your home Wi-Fi. Shared memory across devices and distributed inference are planned and not built yet.
 
 ![NOVA reading an error from the window behind it](docs/screenshots/screen.png)
 
@@ -50,6 +50,16 @@ The first command creates the Python environment, installs dependencies and down
 
 If another app already uses Alt+Space, NOVA takes Ctrl+Alt+Space instead and shows that in the launcher's footer and the tray tooltip.
 
+## Use NOVA from your phone
+
+1. On the PC: open NOVA, press **Ctrl M**, and under **Phone** click **Turn on**. The first time, Windows may ask whether Python may use the network: allow it on **private networks** only.
+2. Click **Pair a phone**. NOVA shows a QR code, a six-digit code and an address (like `http://192.168.29.104:8766`).
+3. On your phone, on the same Wi-Fi, scan the QR code with the camera (or open the address in Chrome and type the code).
+4. The first time, the phone needs NOVA's certificate, which encrypts everything between phone and PC. The page walks you through it: download `NOVA.crt`, then in Settings search for **CA certificate**, tap *Install anyway* and pick the file. Come back and tap **Continue**; the phone pairs by itself.
+5. Chrome's menu → *Add to Home screen* gives it an icon.
+
+After that, the phone finds NOVA by itself on any Wi-Fi you both join (home, office, a friend's place), at `nova-<your PC>.local`; this needs Android 12 or later. If Windows calls a Wi-Fi *Public*, its firewall blocks the phone: NOVA's panel tells you, and you can mark a network you trust as Private in Windows' Wi-Fi settings. Office networks that keep devices apart cannot be used. The phone talks to NOVA on your PC: the PC must be on, with NOVA running. Remove a phone under Ctrl M → Phone at any time. NOVA's certificate can only vouch for addresses on home networks, never for a website, so installing it does not let anyone impersonate other sites to your phone.
+
 ## Connect your accounts
 
 Press **Ctrl M** in the launcher and look under **Connections**. NOVA never sees your passwords: you sign in on Google's own page, and GitHub access comes from your GitHub CLI or a token you create. Credentials are encrypted with Windows (DPAPI) for your Windows account only, and never reach the model or the logs. Disconnect at any time; for Google that also revokes NOVA's access.
@@ -83,6 +93,9 @@ Set these environment variables before starting NOVA.
 | `NOVA_VOICE` | `true` | Offer voice at all. The microphone still only opens when you turn it on |
 | `NOVA_MODELS_DIR` | `backend\models` | Where the Whisper and Piper models are |
 | `NOVA_BROWSER` | `true` | Let NOVA use its own Edge window for the web tools |
+| `NOVA_PHONE_PORT` | `8766` | Port of the phone setup page on the home network (only while phone access is on) |
+| `NOVA_PHONE_SECURE_PORT` | `8767` | Port of the phone app, over HTTPS (only while phone access is on) |
+| `NOVA_PHONE_HOST` | picked automatically | Address to offer phone access on, if NOVA picks the wrong network |
 
 ## Privacy and safety
 
@@ -97,7 +110,7 @@ Set these environment variables before starting NOVA.
 - Risky actions (closing apps, deleting a memory) wait for your confirmation in the launcher.
 - Memory never stores passwords, codes, keys, card numbers or ID numbers, even when asked: that is enforced in code, not left to the model. Automatic memory also skips health and money details.
 - Every action NOVA attempts is recorded in a local log (`GET /api/actions`).
-- The backend listens only on your own machine and requires a token that is generated fresh at every launch.
+- The backend listens only on your own machine and requires a token that is generated fresh at every launch. Phone access, when you turn it on, adds listeners on your home network: a setup page that hands out NOVA's certificate, and the phone app over HTTPS, which accepts only paired phones, from private addresses, and none of the account, microphone or phone settings.
 
 ## Quality
 

@@ -1,5 +1,57 @@
 # Changelog
 
+## 0.7.2 (phone: any Wi-Fi you share) - 2026-10-01
+
+Pair once; after that, wherever your phone and PC are on the same Wi-Fi (home, office, a friend's place), the phone finds NOVA by itself.
+
+### Phone
+- **NOVA has a name on every network**: `nova-<your PC>.local` (e.g. `nova-satya-laptop.local`). NOVA answers for it itself (multicast DNS), and the phone app lives at that name, so its pairing carries over from network to network. Needs Android 12 or later; otherwise the phone uses the address, as before, and pairs again on a new network.
+- **Follows the PC between networks.** While phone access is on, NOVA notices within seconds when the PC joins another Wi-Fi (or leaves one) and starts again there, with a fresh certificate. Nothing to switch off and on.
+- **The phone reconnects by itself** when it can reach the PC again: every few seconds while it cannot, when it gets a connection, and when you open the app.
+- **Public networks are explained.** If Windows has marked the Wi-Fi as Public, its firewall turns phones away; the PC's panel now says so and how to mark a trusted network Private (NOVA never changes this itself).
+
+### Safety
+- NOVA's certificate authority may now also vouch for `.local` names, which exist only on the local network, never on the internet; still not for any website. An authority made under the old rules is replaced automatically.
+- Phone-access events (paired phones, the network) go only to the PC, not to phones.
+
+### Quality
+- Tests: the name and its DNS answers, a certificate for the name, an old authority being replaced, phone access following the PC off one network and onto another, and switching it off in the middle of a change (which used to hang). 257 unit tests.
+- Checked live on this Wi-Fi: Windows resolved `nova-satya-laptop.local` through NOVA's own answer in 0.03 s, a verified HTTPS request by name succeeded, a phone-sized Edge paired by name, and the school Wi-Fi was correctly reported as Public.
+## 0.7.1 (phone: encrypted, and pairing by QR code) - 2026-10-01
+
+### Phone
+- **Pair by QR code.** **Pair a phone** now shows a QR code next to the six-digit code. Scan it with the phone's camera and the phone pairs by itself; typing the code still works.
+- **Encrypted.** The phone app now runs over HTTPS with NOVA's own certificate. The first time, the phone opens a setup page (http://<PC>:8766) that downloads the certificate and shows how to install it (Settings → search "CA certificate"); after that the phone goes straight to NOVA at https://<PC>:8767. Nobody else on the Wi-Fi can read the traffic or pretend to be NOVA.
+
+### Safety
+- NOVA's certificate authority is restricted to home-network addresses (name constraints): even if its key leaked, it could not vouch for any website. Its key is kept with DPAPI in the vault, never as a plain file. A server certificate is made fresh at every start for the PC's current address.
+- Over plain HTTP, NOVA now serves only the setup page and the certificate; pairing, the app and the API answer only over HTTPS.
+- The setup page and the PC both show the start of the certificate's SHA-256 fingerprint, so you can check you installed NOVA's and not someone else's.
+
+### Quality
+- Tests check that the certificate verifies for NOVA's address and is refused for a public address and a website name, that the key never lands in a plain file, and that the phone app is unreachable without trusting NOVA's certificate. 250 unit tests.
+- Checked live: the setup page (shows the steps until the certificate is trusted), and a scanned code pairing the phone app over HTTPS by itself.
+- New dependencies: cryptography and segno (QR codes, pure Python).
+## 0.7.0 (Phase 6: NOVA on your phone) - 2026-10-01
+
+Use NOVA from your Android phone on the same Wi-Fi as your PC. The PC still does all the thinking; the phone is a window onto it.
+
+### Phone
+- On the PC: Ctrl M → **Phone** → **Turn on**, then **Pair a phone** for a six-digit code. On the phone: open the address shown (e.g. `http://192.168.29.104:8766`), type the code, done. Add it to the home screen from Chrome's menu for an app icon.
+- The phone app: chat with the same characters, tool rows and confirmation cards, suggestions, reminders that pop up while it is open, and the Memory view (reminders, memories, recent actions).
+- Typing by voice works through the phone keyboard's microphone.
+
+### Safety
+- Off until you turn it on, remembered across restarts. While on, NOVA listens on the PC's home-network address only (never a VPN's), and only accepts senders on private networks.
+- Each phone has its own random key; only a hash of it is stored. Removing a phone locks it out at once. A pairing code works once, for five minutes, and five wrong guesses use it up.
+- A phone cannot reach account connections, the PC's microphone and speakers, the screen button, or phone access itself (so it cannot pair more phones). The desktop's own key is refused on the phone listener.
+- Pages for the phone carry a strict Content-Security-Policy: they can talk only to NOVA, and cannot be framed.
+- Traffic on your Wi-Fi was not encrypted in this version (plain HTTP); 0.7.1 adds HTTPS.
+
+### Quality
+- Tests run a real second listener: pairing, wrong and reused codes, what a phone may and may not reach, removing a phone, and switching off closing the port. 244 unit tests.
+- Checked live: turned on and paired from the PC's panel, then paired, chatted (a reminder set from the phone), opened the Memory view and was locked out after removal, in a phone-sized browser.
+
 ## 0.6.0 (Phase 5 complete: Gmail, Google Calendar, GitHub) - 2026-10-01
 
 Connect your accounts under Ctrl M → Connections, then ask "do I have any unread email?", "reply to Priya and say Friday works", "what's on my calendar tomorrow?" or "is anything waiting for me on GitHub?".

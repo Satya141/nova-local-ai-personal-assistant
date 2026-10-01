@@ -2,6 +2,7 @@ import { type ReactNode, useCallback, useEffect, useState } from "react";
 
 import { Character, type CharacterKind } from "@/components/character";
 import { ConnectionsSection } from "@/components/connections";
+import { PhoneAccessSection } from "@/components/phone-access";
 import { toolOwner } from "@/components/transcript";
 import {
   type Action,
@@ -110,7 +111,7 @@ function Row({
  * What NOVA is holding for the user: upcoming reminders and scheduled tasks, and every memory.
  * Cancel and Forget act at once; the click is the user's own confirmation, as with Forget in a chat.
  */
-export function KnownPanel() {
+export function KnownPanel({ phone = false }: { phone?: boolean }) {
   const [reminders, setReminders] = useState<Reminder[] | null>(null);
   const [memories, setMemories] = useState<Memory[] | null>(null);
   const [actions, setActions] = useState<Action[]>([]);
@@ -175,9 +176,17 @@ export function KnownPanel() {
           ))
         )}
       </Section>
-      <Section title="Connections">
-        <ConnectionsSection />
-      </Section>
+      {/* Accounts and phone access are managed on the PC only. */}
+      {!phone && (
+        <>
+          <Section title="Phone">
+            <PhoneAccessSection />
+          </Section>
+          <Section title="Connections">
+            <ConnectionsSection />
+          </Section>
+        </>
+      )}
       {actions.length > 0 && (
         <Section title="Recent actions" count={actions.length}>
           {actions.map((a) => (

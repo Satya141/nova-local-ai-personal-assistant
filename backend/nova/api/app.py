@@ -8,7 +8,9 @@ web page open in the user's browser could drive the agent.
 from __future__ import annotations
 
 import asyncio
+import ipaddress
 import json
+import mimetypes
 import secrets
 import webbrowser
 from collections.abc import AsyncIterator
@@ -16,7 +18,8 @@ from contextlib import asynccontextmanager
 
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, RedirectResponse, StreamingResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from nova import __version__
@@ -32,11 +35,17 @@ from nova.memory.embeddings import OllamaEmbedder
 from nova.memory.extractor import MemoryExtractor
 from nova.permissions import PermissionGate
 from nova.permissions.audit import ActionLog
+from nova.phone.devices import DeviceStore
+from nova.phone.certs import Certificates
+from nova.phone.service import PhoneAccess, qr_svg
 from nova.scheduler import ReminderStore, Scheduler
 from nova.settings import SettingsStore
 from nova.tools import build_registry
 from nova.vision import ScreenReader
 from nova.voice import VoiceService
+
+# Windows does not know this type; Android Chrome wants it for the home-screen app.
+mimetypes.add_type("application/manifest+json", ".webmanifest")
 
 _HEARTBEAT_SECONDS = 15.0
 _NDJSON_HEADERS = {"Cache-Control": "no-store"}
@@ -70,6 +79,25 @@ class GitHubConnectRequest(BaseModel):
     from_cli: bool = False
 
 
+class PhoneAccessRequest(BaseModel):
+    enabled: bool
+
+
+class PairRequest(BaseModel):
+    code: str = Field(min_length=6, max_length=6, pattern=r"^\d{6}$")
+    name: str = Field(default="Phone", max_length=60)
+
+
+# Routes a phone may never use: account credentials, the PC's microphone and speakers, and phone
+# access itself (a phone must not be able to pair more phones or remove the PC's control).
+_DESKTOP_ONLY = ("/api/connections", "/api/voice", "/api/phone")
+# Pages served to phones: the app's own scripts and styles, and nowhere else to talk to.
+_PHONE_CSP = (
+    "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; "
+    "img-src 'self' data:; font-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'"
+)
+
+
 class ConfirmationRequest(BaseModel):
     approved: bool
 
@@ -78,8 +106,12 @@ class SnoozeRequest(BaseModel):
     minutes: int = Field(default=10, ge=1, le=1440)
 
 
+# Events about phone access itself (paired phones, the network) are for the PC's panel only.
+_DESKTOP_EVENTS = frozenset({"phones"})
+
+
 async def event_stream(
-    bus: EventBus, reminders: ReminderStore, heartbeat: float = _HEARTBEAT_SECONDS
+    bus: EventBus, reminders: ReminderStore, heartbeat: float = _HEARTBEAT_SECONDS, phone: bool = False
 ) -> AsyncIterator[str]:
     """Everything a client should be told outside a chat turn, as NDJSON lines.
 
@@ -95,6 +127,8 @@ async def event_stream(
             except TimeoutError:
                 # Lets both ends notice a dead connection.
                 event = {"type": "ping"}
+            if phone and event.get("type") in _DESKTOP_EVENTS:
+                continue
             yield json.dumps(event) + "\n"
 
 
@@ -170,14 +204,29 @@ def create_app(
         app.state.gate = gate
         app.state.actions = actions
         app.state.agent = agent
-        voice = VoiceService(bus, SettingsStore(db), settings.models_dir) if settings.voice else None
+        user_settings = SettingsStore(db)
+        voice = VoiceService(bus, user_settings, settings.models_dir) if settings.voice else None
         app.state.voice = voice
+        phone = PhoneAccess(
+            app,
+            user_settings,
+            DeviceStore(db),
+            Certificates(settings.data_dir / "phone"),
+            settings.phone_port,
+            settings.phone_secure_port,
+            settings.phone_host,
+        )
+        phone.on_change = lambda: bus.publish({"type": "phones", "status": phone.status()})
+        app.state.phone = phone
         scheduler.start()
         if voice:
             await voice.start()
+        if phone.enabled:
+            await phone.start()
         try:
             yield
         finally:
+            await phone.stop()
             if voice:
                 await voice.close()
             if browser:
@@ -191,16 +240,43 @@ def create_app(
             await model.aclose()
             db.close()
 
-    def require_token(request: Request) -> None:
+    def authorize(request: Request) -> None:
+        """Who is asking, decided by the listener the request arrived on.
+
+        The desktop's loopback listener needs the launch token. The phone listener needs a
+        private-network sender and a paired phone's key, and never reaches desktop-only routes.
+        `request.state.device` is the phone, or None for the desktop.
+        """
         scheme, _, token = request.headers.get("authorization", "").partition(" ")
-        if scheme.lower() != "bearer" or not secrets.compare_digest(token, settings.api_token):
+        bearer = token if scheme.lower() == "bearer" else ""
+        path = request.url.path
+        phone: PhoneAccess | None = getattr(request.app.state, "phone", None)
+        request.state.device = None
+        if phone is not None and phone.serves(request.scope.get("server")):
+            client = request.scope.get("client")
+            try:
+                private = client is not None and ipaddress.ip_address(client[0]).is_private
+            except ValueError:
+                private = False
+            if not private:
+                raise HTTPException(status.HTTP_403_FORBIDDEN, "Phone access is for the home network only")
+            if not path.startswith("/api/") or path == "/api/pair":
+                return  # the phone app's own files, and pairing, which checks its code
+            if path.startswith(_DESKTOP_ONLY):
+                raise HTTPException(status.HTTP_403_FORBIDDEN, "This can only be done on the PC")
+            device = phone.devices.authenticate(bearer)
+            if device is None:
+                raise HTTPException(status.HTTP_401_UNAUTHORIZED, "This phone is not paired, or was removed")
+            request.state.device = device
+            return
+        if not secrets.compare_digest(bearer, settings.api_token):
             raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Missing or invalid token")
 
     app = FastAPI(
         title="NOVA",
         version=__version__,
         lifespan=lifespan,
-        dependencies=[Depends(require_token)],
+        dependencies=[Depends(authorize)],
         docs_url=None,
         redoc_url=None,
         openapi_url=None,
@@ -245,11 +321,13 @@ def create_app(
         elif not store.conversation_exists(conversation_id):
             raise HTTPException(status.HTTP_404_NOT_FOUND, "Unknown conversation")
 
+        # From a phone: no spoken reply on the PC's speakers, and no screen button.
+        from_phone = request.state.device is not None
+        voice, screen = body.voice and not from_phone, body.screen and not from_phone
+
         async def events() -> AsyncIterator[str]:
             yield json.dumps({"type": "conversation", "id": conversation_id}) + "\n"
-            async for event in agent.run_turn(
-                conversation_id, body.message.strip(), voice=body.voice, screen=body.screen
-            ):
+            async for event in agent.run_turn(conversation_id, body.message.strip(), voice=voice, screen=screen):
                 yield json.dumps(event) + "\n"
 
         return StreamingResponse(events(), media_type="application/x-ndjson", headers=_NDJSON_HEADERS)
@@ -263,7 +341,7 @@ def create_app(
     @app.get("/api/events")
     async def events(request: Request) -> StreamingResponse:
         return StreamingResponse(
-            event_stream(request.app.state.bus, request.app.state.reminders),
+            event_stream(request.app.state.bus, request.app.state.reminders, phone=request.state.device is not None),
             media_type="application/x-ndjson",
             headers=_NDJSON_HEADERS,
         )
@@ -412,5 +490,76 @@ def create_app(
     @app.get("/api/actions")
     async def recent_actions(request: Request, limit: int = 50) -> dict:
         return {"actions": request.app.state.actions.recent(min(max(limit, 1), 500))}
+
+    # --- phones ------------------------------------------------------------------------
+
+    def phones_changed(request: Request) -> None:
+        request.app.state.bus.publish({"type": "phones", "status": request.app.state.phone.status()})
+
+    @app.get("/api/phone")
+    async def phone_status(request: Request) -> dict:
+        return request.app.state.phone.status()
+
+    @app.post("/api/phone")
+    async def phone_toggle(body: PhoneAccessRequest, request: Request) -> dict:
+        await request.app.state.phone.set_enabled(body.enabled)
+        phones_changed(request)
+        return request.app.state.phone.status()
+
+    @app.post("/api/phone/code")
+    async def phone_code(request: Request) -> dict:
+        """A new six-digit code for pairing a phone, shown on the PC."""
+        phone: PhoneAccess = request.app.state.phone
+        if not phone.running:
+            raise HTTPException(status.HTTP_409_CONFLICT, "Turn on phone access first")
+        code, seconds = phone.pairing.new()
+        link = phone.pairing_link(code)
+        return {"code": code, "expires_in": seconds, "url": phone.url, "qr": qr_svg(link) if link else None}
+
+    @app.delete("/api/phone/devices/{device_id}")
+    async def phone_remove(device_id: int, request: Request) -> dict:
+        if not request.app.state.phone.devices.remove(device_id):
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "No such phone")
+        phones_changed(request)
+        return request.app.state.phone.status()
+
+    @app.post("/api/pair")
+    async def pair(body: PairRequest, request: Request) -> dict:
+        """The phone side of pairing: the code shown on the PC buys this phone its own key."""
+        phone: PhoneAccess = request.app.state.phone
+        if not phone.serves(request.scope.get("server")):
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Pair from the phone app")
+        if not phone.pairing.redeem(body.code):
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "That code is wrong or has expired. Make a new one on the PC.")
+        device, token = phone.devices.add(body.name)
+        phones_changed(request)
+        return {"token": token, "device": device.to_dict()}
+
+    # --- the phone app's files ---------------------------------------------------------
+
+    ui = settings.phone_ui_dir
+
+    @app.get("/", include_in_schema=False)
+    async def phone_home() -> RedirectResponse:
+        return RedirectResponse("/phone")
+
+    @app.get("/phone", include_in_schema=False)
+    async def phone_page() -> Response:
+        page = ui / "phone.html"
+        if not page.is_file():
+            return Response("The phone app has not been built. Run: pnpm --dir apps/desktop build", status_code=503)
+        return FileResponse(page, headers={"Cache-Control": "no-cache"})
+
+    @app.middleware("http")
+    async def phone_headers(request: Request, call_next):
+        response = await call_next(request)
+        response.headers.setdefault("Content-Security-Policy", _PHONE_CSP)
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault("Referrer-Policy", "no-referrer")
+        return response
+
+    if ui.is_dir():
+        # Scripts, styles and icons. Added last, so every route above wins.
+        app.mount("/", StaticFiles(directory=ui), name="phone-ui")
 
     return app

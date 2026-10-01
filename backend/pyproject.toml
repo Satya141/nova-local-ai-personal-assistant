@@ -16,6 +16,9 @@ dependencies = [
     "pillow>=12",
     # Web actions (Phase 5): drives the installed Microsoft Edge, so no browser download.
     "playwright>=1.63,<2",
+    # Phone access: NOVA's own HTTPS certificates, and the pairing QR code.
+    "cryptography>=46",
+    "segno>=1.6,<2",
 ]
 
 [project.optional-dependencies]

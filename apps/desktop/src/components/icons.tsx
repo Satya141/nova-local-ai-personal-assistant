@@ -36,6 +36,13 @@ export const WindowCloseIcon = (props: IconProps) => (
   </Icon>
 );
 
+export const LockIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <rect x="3" y="7" width="10" height="7" rx="1.8" />
+    <path d="M5.3 7V5.2a2.7 2.7 0 0 1 5.4 0V7" />
+  </Icon>
+);
+
 export const SearchIcon = (props: IconProps) => (
   <Icon {...props}>
     <circle cx="7" cy="7" r="4.2" />

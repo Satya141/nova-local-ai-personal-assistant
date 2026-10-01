@@ -3,10 +3,13 @@
 import { useEffect, useState } from "react";
 
 import { Character, type CharacterKind, type CharacterState } from "@/components/character";
+import { PairingCard } from "@/components/phone-access";
 import { ReminderCard } from "@/components/reminder-card";
 import { Transcript } from "@/components/transcript";
 import type { Reminder } from "@/lib/backend";
 import type { Item } from "@/lib/use-agent";
+
+import sampleQr from "./sample-qr.svg";
 
 /**
  * Design reference: every character in every state, every kind of transcript
@@ -122,6 +125,19 @@ export default function Gallery() {
             {reminders.map((reminder) => (
               <ReminderCard key={reminder.id} reminder={reminder} onDone={() => {}} onSnooze={() => {}} />
             ))}
+          </div>
+        </section>
+        <section>
+          <h2 className="text-lg font-semibold">Pairing a phone</h2>
+          <div className="mt-4 w-[688px]">
+            <PairingCard
+              code="220338"
+              url="http://192.168.29.104:8766"
+              qr={sampleQr.src}
+              secondsLeft={247}
+              certificate={{ name: "NOVA on Satya-laptop", fingerprint: "37:21:C8:F2" }}
+              onCancel={() => {}}
+            />
           </div>
         </section>
       </div>

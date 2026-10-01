@@ -85,6 +85,16 @@ MIGRATIONS: tuple[str, ...] = (
     """
     ALTER TABLE action_log ADD COLUMN summary TEXT;
     """,
+    # 6: phones paired with this NOVA (Phase 6). Only a hash of each phone's key is kept.
+    """
+    CREATE TABLE devices (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        name       TEXT NOT NULL,
+        token_hash TEXT NOT NULL UNIQUE,
+        created_at TEXT NOT NULL,
+        last_seen  TEXT
+    );
+    """,
 )
 
 

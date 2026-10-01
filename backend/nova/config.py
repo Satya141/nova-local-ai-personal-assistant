@@ -23,6 +23,11 @@ def _default_models_dir() -> Path:
     return Path(__file__).resolve().parents[1] / "models"
 
 
+def _default_phone_ui_dir() -> Path:
+    # The desktop app's static export, which also contains the phone page (/phone).
+    return Path(__file__).resolve().parents[2] / "apps" / "desktop" / "out"
+
+
 def _default_data_dir() -> Path:
     base = os.environ.get("LOCALAPPDATA") or str(Path.home() / ".local" / "share")
     return Path(base) / "NOVA"
@@ -60,6 +65,13 @@ class Settings:
     # Voice input and output. The microphone only opens when the user turns it on.
     voice: bool = True
     models_dir: Path = field(default_factory=_default_models_dir)
+    # Phone access (off until the user turns it on): the setup page's port and the app's HTTPS
+    # port on the home network, an address to use instead of the one NOVA picks, and where the
+    # built phone app is.
+    phone_port: int = 8766
+    phone_secure_port: int = 8767
+    phone_host: str | None = None
+    phone_ui_dir: Path = field(default_factory=_default_phone_ui_dir)
     max_steps: int = 8
     history_limit: int = 40
     confirm_timeout: float = 120.0
@@ -90,6 +102,10 @@ class Settings:
             browser=_env_bool("NOVA_BROWSER", cls.browser),
             voice=_env_bool("NOVA_VOICE", cls.voice),
             models_dir=Path(os.environ["NOVA_MODELS_DIR"]) if os.environ.get("NOVA_MODELS_DIR") else _default_models_dir(),
+            phone_port=int(os.environ.get("NOVA_PHONE_PORT", cls.phone_port)),
+            phone_secure_port=int(os.environ.get("NOVA_PHONE_SECURE_PORT", cls.phone_secure_port)),
+            phone_host=os.environ.get("NOVA_PHONE_HOST") or None,
+            phone_ui_dir=Path(os.environ["NOVA_PHONE_UI_DIR"]) if os.environ.get("NOVA_PHONE_UI_DIR") else _default_phone_ui_dir(),
             allowed_origins=(
                 tuple(o.strip() for o in origins.split(",") if o.strip())
                 if origins

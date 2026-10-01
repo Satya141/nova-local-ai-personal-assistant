@@ -1,0 +1,14 @@
+{
+  "name": "NOVA",
+  "short_name": "NOVA",
+  "description": "NOVA on your phone, talking to NOVA on your PC.",
+  "start_url": "/phone",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#17181c",
+  "theme_color": "#17181c",
+  "icons": [
+    { "src": "/phone-icon-256.png", "sizes": "256x256", "type": "image/png" },
+    { "src": "/phone-icon.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }
+  ]
+}
