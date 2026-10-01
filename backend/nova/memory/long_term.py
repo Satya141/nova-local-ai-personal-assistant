@@ -200,10 +200,16 @@ class MemoryStore:
     # --- writing -------------------------------------------------------------
 
     async def add(
-        self, content: str, category: str, source: str, conversation_id: str | None = None
+        self,
+        content: str,
+        category: str,
+        source: str,
+        conversation_id: str | None = None,
+        said_on: date | None = None,
     ) -> SavedMemory:
-        # A memory outlives the week it was said in, so "next Friday" becomes a date.
-        content = resolve_weekdays(" ".join(content.split()), date.today())
+        # A memory outlives the week it was said in, so "next Friday" becomes a date: counted
+        # from the day it was said (a phone may sync days later), not the day it is saved.
+        content = resolve_weekdays(" ".join(content.split()), said_on or date.today())
         if not content:
             raise ValueError("A memory needs some text.")
         if looks_sensitive(content):

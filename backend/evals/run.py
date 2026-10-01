@@ -24,19 +24,21 @@ import sys
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
+from datetime import time as dtime
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
 from nova.agent import Agent
 from nova.config import Settings
-from nova.database import Database
+from nova.database import Database, timestamp
 from nova.inference import OllamaProvider
 from nova.memory import ConversationStore, MemoryStore
 from nova.memory.embeddings import OllamaEmbedder
 from nova.permissions import PermissionGate
 from nova.scheduler import ReminderStore
+from nova.timeline import Timeline
 from nova.tools import ToolResult, build_registry
 from nova.tools.files import missing_path, name_matches, normalize_extension, parse_query
 from nova.tools.gcalendar import calendar_tools
@@ -440,6 +442,61 @@ def check_organised(run: Run) -> str | None:
     return None
 
 
+def seed_history(db: Database) -> None:
+    """A few days of the user's past with NOVA, for the timeline scenarios."""
+
+    def at(days_ago: int, hour: int, minute: int = 0) -> str:
+        day = date.today() - timedelta(days=days_ago)
+        return timestamp(datetime.combine(day, dtime(hour, minute)).astimezone())
+
+    db.run("INSERT INTO conversations (id, created_at) VALUES ('past', ?)", (at(3, 10),))
+    for days_ago, hour, text in [
+        (3, 10, "Sort my Downloads folder by type"),
+        (1, 9, "Open VS Code, I'm going to work on the shop-frontend project"),
+        (1, 13, "What's the weather in Hyderabad today?"),
+        (1, 21, "Remind me tomorrow at 7 to go running"),
+    ]:
+        db.run(
+            "INSERT INTO messages (conversation_id, role, content, created_at) VALUES ('past', 'user', ?, ?)",
+            (text, at(days_ago, hour)),
+        )
+    for days_ago, hour, tool, summary in [
+        (3, 10, "sort_files", "Sort 7 files in Downloads into Documents, Images, Music"),
+        (1, 9, "open_application", "Open Visual Studio Code"),
+        (1, 13, "web_search", "Search the web for 'weather Hyderabad today'"),
+        (1, 21, "create_reminder", "Remind you tomorrow at 7:00 AM: Go running"),
+    ]:
+        db.run(
+            "INSERT INTO action_log (tool, arguments, decision, ok, result, created_at, summary) VALUES (?, '{}', 'ran', 1, '', ?, ?)",
+            (tool, at(days_ago, hour, 1), summary),
+        )
+
+
+def check_yesterday(run: Run) -> str | None:
+    calls = run.called("recall_activity")
+    if not calls:
+        return f"no recall_activity; calls={run.order()}"
+    if not any(re.search(r"yesterday", c.get("when", ""), re.I) or c.get("when") == (date.today() - timedelta(days=1)).isoformat() for c in calls):
+        return f"asked for the wrong time: {calls}"
+    if not re.search(r"VS Code|Visual Studio|shop-frontend", run.reply, re.I) or not re.search(r"weather|Hyderabad", run.reply, re.I):
+        return f"reply misses yesterday's activity: {run.reply[:200]!r}"
+    if re.search(r"sort|Downloads", run.reply, re.I):
+        return f"reply includes another day's activity: {run.reply[:200]!r}"
+    return None
+
+
+def check_last_opened(run: Run) -> str | None:
+    calls = run.called("recall_activity")
+    if not calls:
+        return f"no recall_activity; calls={run.order()}"
+    if not any(re.search(r"code", c.get("about", ""), re.I) for c in calls):
+        return f"did not look for VS Code: {calls}"
+    yesterday = date.today() - timedelta(days=1)
+    if not re.search(rf"yesterday|{yesterday:%A}|{yesterday.day} {yesterday:%B}", run.reply, re.I):
+        return f"reply does not say when: {run.reply[:200]!r}"
+    return None
+
+
 SCENARIOS = [
     Scenario("open_one_app", "Open VS Code", opened_apps("code")),
     Scenario("open_two_apps", "Open Calculator and Notepad", opened_apps("calculator", "notepad")),
@@ -682,6 +739,8 @@ SCENARIOS = [
             reply_matches(r"folder|tidy|download"),
         ),
     ),
+    Scenario("timeline_yesterday", "What did I do yesterday?", check_yesterday),
+    Scenario("timeline_last_opened", "When did I last open VS Code?", check_last_opened),
     Scenario("general_knowledge", "What is the capital of Australia?", all_of(no_tools, reply_matches(r"Canberra"))),
     Scenario(
         "unsupported_request",
@@ -795,7 +854,10 @@ async def run_scenario(scenario: Scenario, settings: Settings, provider, embedde
         run.reminders.create(text, datetime.now(UTC) + offset)
 
     # The screen and web tools are registered with objects that are never used: stand-ins answer instead.
-    tools = build_registry(run.memory, run.reminders, lambda: None, ScreenReader(None), SimpleNamespace(elements={}))
+    seed_history(db)
+    tools = build_registry(
+        run.memory, run.reminders, lambda: None, ScreenReader(None), SimpleNamespace(elements={}), timeline=Timeline(db)
+    )
     # Every account connected; the stand-ins answer for the services.
     for tool in (*gmail_tools(None), *calendar_tools(None), *github_tools(None)):
         tools.register(tool)

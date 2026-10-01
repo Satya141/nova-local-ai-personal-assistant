@@ -185,6 +185,55 @@ export const newPairingCode = () =>
   phoneCall<{ code: string; expires_in: number; url: string; qr: string | null }>("/api/phone/code", { method: "POST" });
 export const removePhone = (id: number) => phoneCall<PhoneAccessStatus>(`/api/phone/devices/${id}`, { method: "DELETE" });
 
+// --- the life timeline (backend/nova/timeline.py) ---------------------------------------------
+
+export type TimelineEntry = {
+  at: string;
+  kind: "asked" | "did" | "remembered" | "reminded";
+  text: string;
+  tool: string | null;
+  ok: boolean | null;
+  outcome: "ran" | "approved" | "declined" | "blocked" | "rejected" | null;
+};
+export type TimelineDay = { day: string; entries: TimelineEntry[] };
+
+/** `days` days ending with `last` (YYYY-MM-DD, default today), newest first. */
+export async function timelineDays(days = 7, last?: string): Promise<TimelineDay[]> {
+  const query = new URLSearchParams({ days: String(days), ...(last ? { last } : {}) });
+  const response = await request(`/api/timeline?${query}`);
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  return (await response.json()).days;
+}
+
+/** A few sentences about one day, written by the local model. */
+export async function summariseDay(day: string): Promise<string> {
+  const response = await request("/api/timeline/summary", { method: "POST", body: JSON.stringify({ day }) });
+  const body = await response.json().catch(() => null);
+  if (!response.ok) throw new Error(body?.detail ?? `HTTP ${response.status}`);
+  return body.summary;
+}
+
+// --- sync: the phone's copy, and changes it made while the PC was away -----------------------
+// Mirrors the models in backend/nova/phone/sync.py.
+
+export type SyncOp =
+  | { id: string; kind: "remember"; text: string; said_on: string }
+  | { id: string; kind: "forget"; memory_id: number }
+  | { id: string; kind: "remind"; text: string; due_at: string; repeat?: Reminder["repeat"]; shown?: boolean }
+  | { id: string; kind: "dismiss" | "cancel"; reminder_id?: number; made_by?: string }
+  | { id: string; kind: "snooze"; reminder_id?: number; made_by?: string; minutes: number; at: string };
+
+export type Snapshot = { at: string; memories: Memory[]; reminders: Reminder[]; pending: Reminder[] };
+export type SyncResult = { id: string; ok: boolean; message: string };
+
+/** Send the phone's outbox; get back what happened to each change and a fresh copy. */
+export async function syncPhone(ops: SyncOp[]): Promise<{ results: SyncResult[]; snapshot: Snapshot }> {
+  const response = await request("/api/sync", { method: "POST", body: JSON.stringify({ ops }) });
+  const body = await response.json().catch(() => null);
+  if (!response.ok) throw new Error(body?.detail ? JSON.stringify(body.detail) : `HTTP ${response.status}`);
+  return body;
+}
+
 /** Parse a newline-delimited JSON body. A network chunk can end mid-line. */
 async function* readLines<T>(body: NonNullable<Response["body"]>): AsyncGenerator<T> {
   const reader = body.pipeThrough(new TextDecoderStream()).getReader();

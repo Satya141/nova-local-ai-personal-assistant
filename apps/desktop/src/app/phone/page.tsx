@@ -5,18 +5,17 @@ import { type FormEvent, useCallback, useEffect, useRef, useState } from "react"
 import { Character, type CharacterKind, type CharacterState } from "@/components/character";
 import { ReturnIcon } from "@/components/icons";
 import { KnownPanel } from "@/components/known-panel";
+import { PocketPanel } from "@/components/pocket-panel";
+import { TimelinePanel } from "@/components/timeline-panel";
 import { ReminderCard, SNOOZE_MINUTES } from "@/components/reminder-card";
 import { Transcript } from "@/components/transcript";
-import {
-  NotPaired,
-  type Reminder,
-  dismissReminder,
-  health,
-  listenForEvents,
-  pairPhone,
-  snoozeReminder,
-} from "@/lib/backend";
+import { NotPaired, dismissReminder, health, listenForEvents, pairPhone, snoozeReminder } from "@/lib/backend";
+import { type PocketReminder, pocket, syncNow, watchPocket, wipePocket } from "@/lib/pocket";
 import { useAgent } from "@/lib/use-agent";
+
+/** Cards on screen: from the PC, or rung by the phone itself while the PC is away. */
+type Card = PocketReminder & { offline?: boolean };
+const cardKey = (card: Card) => (card.madeBy ? `m-${card.madeBy}` : `r-${card.id}`);
 
 type Link = { kind: "checking" } | { kind: "unpaired" } | { kind: "offline"; message: string } | { kind: "ready"; model: string };
 
@@ -110,8 +109,9 @@ export default function PhoneApp() {
   const [link, setLink] = useState<Link>({ kind: "checking" });
   const agent = useAgent();
   const [input, setInput] = useState("");
-  const [reminders, setReminders] = useState<Reminder[]>([]);
-  const [showKnown, setShowKnown] = useState(false);
+  const [reminders, setReminders] = useState<Card[]>([]);
+  const [side, setSide] = useState<"known" | "timeline" | null>(null);
+  const showKnown = side !== null;
   const scroller = useRef<HTMLDivElement>(null);
   const field = useRef<HTMLInputElement>(null);
 
@@ -156,19 +156,65 @@ export default function PhoneApp() {
     };
   }, [offline, connect]);
 
-  // Reminders that fire while the app is open, and memories NOVA notes.
+  // Reminders that fire while the app is open, and memories NOVA notes. Each one also refreshes
+  // the phone's copy, as does reaching the PC at all: that is when offline changes go across.
   const { noteMemory } = agent;
   const ready = link.kind === "ready";
   useEffect(() => {
     if (!ready) return;
-    return listenForEvents((event) => {
+    void syncNow();
+    const timer = setInterval(() => void syncNow(), 120_000);
+    const stop = listenForEvents((event) => {
       if (event.type === "reminder" && event.reminder.pending_ack) {
-        setReminders((shown) => [...shown.filter((r) => r.id !== event.reminder.id), event.reminder]);
+        setReminders((shown) => [...shown.filter((r) => r.madeBy || r.id !== event.reminder.id), event.reminder]);
+        void syncNow();
       } else if (event.type === "memory_saved") {
         noteMemory(event.conversation_id, event.memory);
+        void syncNow();
       }
     });
+    return () => {
+      clearInterval(timer);
+      stop();
+    };
   }, [ready, noteMemory]);
+
+  // Keep the app itself on the phone, so it opens while the PC is away (HTTPS only).
+  useEffect(() => {
+    if ("serviceWorker" in navigator && window.isSecureContext) {
+      navigator.serviceWorker.register("/phone-sw.js", { scope: "/" }).catch(() => {});
+    }
+  }, []);
+
+  // The PC removed this phone: drop the copy too.
+  useEffect(() => {
+    if (link.kind === "unpaired") void wipePocket();
+  }, [link.kind]);
+
+  // While the PC is away, the phone rings reminders from its copy itself (while the app is open).
+  const rung = useRef(new Set<string>());
+  useEffect(() => {
+    if (!offline) return;
+    let current: PocketReminder[] = [];
+    const ring = () => {
+      const now = Date.now();
+      for (const reminder of current) {
+        const key = `${cardKey(reminder)}@${reminder.due_at}`;
+        if (reminder.status !== "active" || new Date(reminder.due_at).getTime() > now || rung.current.has(key)) continue;
+        rung.current.add(key);
+        setReminders((shown) => [...shown.filter((r) => cardKey(r) !== cardKey(reminder)), { ...reminder, offline: true }]);
+      }
+    };
+    const stop = watchPocket((view) => {
+      current = view.reminders;
+      ring();
+    });
+    const timer = setInterval(ring, 10_000);
+    return () => {
+      stop();
+      clearInterval(timer);
+    };
+  }, [offline]);
 
   useEffect(() => {
     scroller.current?.scrollTo({ top: scroller.current.scrollHeight, behavior: "smooth" });
@@ -178,15 +224,15 @@ export default function PhoneApp() {
     const message = text.trim();
     if (!message || agent.busy || !ready) return;
     setInput("");
-    setShowKnown(false);
+    setSide(null);
     agent.send(message);
   };
 
-  const removeCard = (id: number) => setReminders((shown) => shown.filter((r) => r.id !== id));
+  const removeCard = (card: Card) => setReminders((shown) => shown.filter((r) => cardKey(r) !== cardKey(card)));
 
   const face: CharacterState =
     link.kind === "checking" ? "asleep"
-    : link.kind === "offline" ? "error"
+    : link.kind === "offline" ? "asleep"
     : agent.phase !== "idle" ? agent.phase
     : input.trim() ? "listening"
     : agent.outcome === "error" ? "error"
@@ -199,6 +245,7 @@ export default function PhoneApp() {
     : agent.phase === "speaking" ? "Replying…"
     : link.kind === "ready" ? `On your PC · ${link.model}`
     : link.kind === "checking" ? "Connecting…"
+    : link.kind === "offline" ? "Your PC is away · on this phone"
     : null;
 
   return (
@@ -217,14 +264,27 @@ export default function PhoneApp() {
             </div>
             {ready && (
               <>
-                <button
-                  type="button"
-                  onClick={() => setShowKnown(!showKnown)}
-                  aria-pressed={showKnown}
-                  className="rounded-full border border-line px-3 py-1.5 text-[12.500px] text-text-muted"
-                >
-                  {showKnown ? "Chat" : "Memory"}
-                </button>
+                {side !== null ? (
+                  <button
+                    type="button"
+                    onClick={() => setSide(null)}
+                    className="rounded-full border border-line px-3 py-1.5 text-[12.500px] text-text-muted"
+                  >
+                    Chat
+                  </button>
+                ) : null}
+                {(["known", "timeline"] as const)
+                  .filter((which) => which !== side)
+                  .map((which) => (
+                    <button
+                      key={which}
+                      type="button"
+                      onClick={() => setSide(which)}
+                      className="rounded-full border border-line px-3 py-1.5 text-[12.500px] text-text-muted"
+                    >
+                      {which === "known" ? "Memory" : "Timeline"}
+                    </button>
+                  ))}
                 {agent.items.length > 0 && !showKnown && (
                   <button
                     type="button"
@@ -242,15 +302,17 @@ export default function PhoneApp() {
             <div className="flex-none divide-y divide-line border-b border-line bg-surface-raised">
               {reminders.map((reminder) => (
                 <ReminderCard
-                  key={reminder.id}
+                  key={cardKey(reminder)}
                   reminder={reminder}
-                  onDone={(id) => {
-                    removeCard(id);
-                    dismissReminder(id).catch(() => {});
+                  onDone={() => {
+                    removeCard(reminder);
+                    if (reminder.offline) void pocket.dismiss(reminder);
+                    else dismissReminder(reminder.id).catch(() => {});
                   }}
-                  onSnooze={(id) => {
-                    removeCard(id);
-                    snoozeReminder(id, SNOOZE_MINUTES).catch(() => {});
+                  onSnooze={() => {
+                    removeCard(reminder);
+                    if (reminder.offline) void pocket.snooze(reminder, SNOOZE_MINUTES);
+                    else snoozeReminder(reminder.id, SNOOZE_MINUTES).catch(() => {});
                   }}
                 />
               ))}
@@ -259,14 +321,23 @@ export default function PhoneApp() {
 
           <div ref={scroller} className="transcript min-h-0 flex-1 overflow-y-auto px-4 py-3">
             {link.kind === "offline" ? (
-              <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
-                <p className="max-w-xs text-[14px] text-text-muted">{link.message}</p>
-                <button type="button" onClick={() => connect()} className="rounded-xl bg-accent px-5 py-2.5 text-[14px] font-semibold text-surface">
-                  Try again
-                </button>
+              <div className="flex flex-col gap-4 pt-1">
+                <div className="flex items-start gap-3 px-1">
+                  <p className="flex-1 text-[12.500px] leading-snug text-text-muted">{link.message}</p>
+                  <button
+                    type="button"
+                    onClick={() => connect()}
+                    className="flex-none rounded-full border border-line px-3 py-1.5 text-[12.500px] text-text-muted"
+                  >
+                    Try again
+                  </button>
+                </div>
+                <PocketPanel />
               </div>
-            ) : showKnown ? (
+            ) : side === "known" ? (
               <KnownPanel phone />
+            ) : side === "timeline" ? (
+              <TimelinePanel />
             ) : agent.items.length > 0 ? (
               <Transcript items={agent.items} onAnswer={agent.answer} onForget={agent.forget} />
             ) : (

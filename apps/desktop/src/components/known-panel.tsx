@@ -49,7 +49,7 @@ const REPEAT_LABEL: Record<Reminder["repeat"], string> = {
   weekly: "every week",
 };
 
-function when(reminder: Reminder): string {
+export function when(reminder: Reminder): string {
   const due = new Date(reminder.due_at);
   const now = new Date();
   const clock = due.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
@@ -63,7 +63,7 @@ function when(reminder: Reminder): string {
   return `${day}, ${clock}${repeat ? ` · ${repeat}` : ""}`;
 }
 
-function Section({ title, count, children }: { title: string; count?: number; children: ReactNode }) {
+export function Section({ title, count, children }: { title: string; count?: number; children: ReactNode }) {
   return (
     <section className="flex flex-col gap-1">
       <h2 className="px-1 text-[11px] font-medium uppercase tracking-wide text-text-muted">
@@ -74,7 +74,7 @@ function Section({ title, count, children }: { title: string; count?: number; ch
   );
 }
 
-function Row({
+export function Row({
   who,
   label,
   detail,

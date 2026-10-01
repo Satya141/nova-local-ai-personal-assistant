@@ -4,7 +4,7 @@
 
 NOVA is an open-source, local-first AI personal assistant. It runs a language model on your own computer, and it acts: ask it to open an app, find a file or remind you of something and it does that, rather than telling you how.
 
-This repository is at **Phase 7**: a Windows desktop agent with long-term memory, reminders, voice, screen understanding, web browsing, file organising, scheduled tasks, your Gmail, Google Calendar and GitHub, and a phone app that works on your Wi-Fi or, with Tailscale, from anywhere. Distributed inference and the life timeline are planned and not built yet.
+This repository is at **Phase 9**: a Windows desktop agent with long-term memory, reminders, voice, screen understanding, web browsing, file organising, scheduled tasks, your Gmail, Google Calendar and GitHub, and a phone app that works on your Wi-Fi or, with Tailscale, from anywhere. Distributed inference and the life timeline are planned and not built yet.
 
 ![NOVA reading an error from the window behind it](docs/screenshots/screen.png)
 
@@ -29,6 +29,7 @@ NOVA's characters show what it is doing. Nova is the assistant and keeps its mem
   - do work later by itself and show you the result ("every morning at 8, search the web for AI news and give me a short summary"); nothing that needs your OK happens while you are away
   - set, list and cancel reminders, one-off or repeating ("every weekday at 9 remind me to stretch")
 - **Reminders** pop up in the corner of the screen without stealing focus, survive restarts, and show up as missed if NOVA was closed when they were due. Snooze or dismiss them there.
+- **Your timeline.** Press **Ctrl T** to see your days with NOVA: what you asked, what it did, what it remembered, which reminders rang. **Sum up the day** writes a short summary. Or just ask: "what did I do yesterday?", "when did I last open VS Code?".
 - **See and change what NOVA holds.** Press **Ctrl M** in the launcher for every upcoming reminder and scheduled task (Cancel), everything NOVA remembers (Forget), and what it recently did and how each action ended.
 - **Long-term memory.** NOVA notices lasting facts in what you say ("I'm preparing for my Cognizant interview next Friday") and remembers them across conversations, with the date written out. Each one appears under the conversation with a **Forget** button. You can also say "remember that…", "what do you remember about me?" or "forget that…".
 - **Screen understanding.** Press the screen button in the launcher (or the "Explain what's on my screen" chip) and ask about what you were looking at: "what's wrong with this code?", "what does this chart show?", "why is this button disabled?". NOVA reads the window you were working in, not itself, with the local vision model `qwen3-vl:8b`. Asking in words or by voice ("Hey Nova, explain the error on my screen") works too, after you confirm. NOVA never looks at your screen on its own.
@@ -59,6 +60,10 @@ If another app already uses Alt+Space, NOVA takes Ctrl+Alt+Space instead and sho
 5. Chrome's menu → *Add to Home screen* gives it an icon.
 
 After that, the phone finds NOVA by itself on any Wi-Fi you both join (home, office, a friend's place), at `nova-<your PC>.local`; this needs Android 12 or later. If Windows calls a Wi-Fi *Public*, its firewall blocks the phone: NOVA's panel tells you, and you can mark a network you trust as Private in Windows' Wi-Fi settings. Office networks that keep devices apart cannot be used. The phone talks to NOVA on your PC: the PC must be on, with NOVA running. Remove a phone under Ctrl M → Phone at any time. NOVA's certificate can only vouch for addresses on home networks, never for a website, so installing it does not let anyone impersonate other sites to your phone.
+
+### When the PC is off
+
+The phone app keeps a copy of what NOVA remembers and your reminders. When it cannot reach the PC, it opens in pocket mode: read your memories and reminders, add something to remember, set or cancel a reminder. Reminders ring on the phone while the app is open. Everything you change goes to the PC by itself the next time the phone reaches it. Chatting with NOVA still needs the PC (an offline pocket model is next).
 
 ### From anywhere (Tailscale)
 
@@ -123,7 +128,7 @@ Set these environment variables before starting NOVA.
 
 ## Quality
 
-The agent is measured against the real local models, not only unit-tested. `backend/evals` runs realistic requests with the computer-facing tools sandboxed. Current results on qwen3:8b: 126/126 agent task runs (42 scenarios, every account connected) (including a web page that tries to make NOVA delete files) and 38/38 memory-extraction cases. Screen understanding with qwen3-vl:8b answered 12 of 12 questions about realistic screens (an editor error, a dialog, a chart, a form, a traceback, an invoice), about 3 to 8 s each once loaded. The voice pipeline, fed synthetic speech at three speeds with background noise, heard 97 of 99 commands exactly and never woke on the 36 sentences that were not meant for it; a command is ready about 0.7 s after you stop speaking. See [AGENTS.md](AGENTS.md) for how to run them.
+The agent is measured against the real local models, not only unit-tested. `backend/evals` runs realistic requests with the computer-facing tools sandboxed. Current results on qwen3:8b: 132/132 agent task runs (44 scenarios, every account connected) (including a web page that tries to make NOVA delete files) and 38/38 memory-extraction cases. Screen understanding with qwen3-vl:8b answered 12 of 12 questions about realistic screens (an editor error, a dialog, a chart, a form, a traceback, an invoice), about 3 to 8 s each once loaded. The voice pipeline, fed synthetic speech at three speeds with background noise, heard 97 of 99 commands exactly and never woke on the 36 sentences that were not meant for it; a command is ready about 0.7 s after you stop speaking. See [AGENTS.md](AGENTS.md) for how to run them.
 
 ## Licences of what NOVA uses
 

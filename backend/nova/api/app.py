@@ -14,6 +14,7 @@ import secrets
 import webbrowser
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from datetime import date
 
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
@@ -27,7 +28,7 @@ from nova.browser import BrowserSession
 from nova.config import Settings
 from nova.database import Database, utc_now
 from nova.events import EventBus
-from nova.inference import ModelProvider, OllamaProvider
+from nova.inference import Message, ModelError, ModelProvider, OllamaProvider
 from nova.integrations.connections import Connections, IntegrationError
 from nova.memory import ConversationStore, MemoryStore
 from nova.memory.embeddings import OllamaEmbedder
@@ -37,6 +38,9 @@ from nova.permissions.audit import ActionLog
 from nova.phone.devices import DeviceStore
 from nova.phone.certs import Certificates
 from nova.phone.service import PhoneAccess, qr_svg
+from nova.phone.sync import Sync, SyncRequest
+from nova.timeline import Timeline
+from nova.timeline import describe as describe_timeline
 from nova.scheduler import ReminderStore, Scheduler
 from nova.settings import SettingsStore
 from nova.tools import build_registry
@@ -76,6 +80,10 @@ class GitHubConnectRequest(BaseModel):
     token: str | None = Field(default=None, max_length=500)
     # Use the token of the GitHub CLI the user is signed in to.
     from_cli: bool = False
+
+
+class DaySummaryRequest(BaseModel):
+    day: date
 
 
 class PhoneAccessRequest(BaseModel):
@@ -172,7 +180,8 @@ def create_app(
         scheduler = Scheduler(reminders, bus)
         gate = PermissionGate(settings.confirm_timeout)
         actions = ActionLog(db)
-        registry = build_registry(memory, reminders, scheduler.poke, screen, browser)
+        timeline = Timeline(db)
+        registry = build_registry(memory, reminders, scheduler.poke, screen, browser, timeline=timeline)
         accounts = connections or Connections(settings.data_dir)
         accounts.sync(registry)
         agent = Agent(
@@ -203,6 +212,8 @@ def create_app(
         app.state.gate = gate
         app.state.actions = actions
         app.state.agent = agent
+        app.state.timeline = timeline
+        app.state.sync = Sync(db, memory, reminders, actions)
         user_settings = SettingsStore(db)
         voice = VoiceService(bus, user_settings, settings.models_dir) if settings.voice else None
         app.state.voice = voice
@@ -529,6 +540,45 @@ def create_app(
         phones_changed(request)
         return {"token": token, "device": device.to_dict()}
 
+    @app.get("/api/timeline")
+    async def timeline_days(request: Request, last: date | None = None, days: int = 7) -> dict:
+        """Days of the life timeline, newest first, ending with last (default: today)."""
+        return {"days": request.app.state.timeline.days(last or date.today(), min(max(days, 1), 31))}
+
+    @app.post("/api/timeline/summary")
+    async def timeline_summary(body: DaySummaryRequest, request: Request) -> dict:
+        """A few sentences about one day, written by the local model when asked."""
+        entries = request.app.state.timeline.between(body.day, body.day)
+        if not entries:
+            return {"summary": "Nothing happened with NOVA that day."}
+        # The model is told how to name the day, rather than left to work out "today" from a date.
+        ago = (date.today() - body.day).days
+        name = "today" if ago == 0 else "yesterday" if ago == 1 else f"on {body.day:%A} {body.day.day} {body.day:%B}"
+        prompt = (
+            f"Here is what the user did with their assistant NOVA {name}:\n"
+            f"{describe_timeline(entries, limit=60)}\n\n"
+            "Write two or three friendly sentences to the user (\"you\") about that day: what they worked on "
+            f"and what NOVA helped with. Refer to the day as \"{name}\". Only use what is listed. No lists, no times."
+        )
+        try:
+            reply = await request.app.state.provider.complete_json(
+                [Message(role="user", content=prompt)],
+                {"type": "object", "properties": {"summary": {"type": "string"}}, "required": ["summary"]},
+            )
+        except ModelError as exc:
+            raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc)) from exc
+        text = reply.get("summary") if isinstance(reply, dict) else None
+        return {"summary": str(text or "").strip() or "NOVA could not sum up that day."}
+
+    @app.post("/api/sync")
+    async def sync(body: SyncRequest, request: Request) -> dict:
+        """A phone's offline changes in, a fresh copy of memories and reminders out."""
+        device = request.state.device
+        results = await request.app.state.sync.apply(body.ops, device.name if device else None)
+        if body.ops:
+            request.app.state.scheduler.poke()
+        return {"results": results, "snapshot": request.app.state.sync.snapshot()}
+
     # --- the phone app's files ---------------------------------------------------------
 
     ui = settings.phone_ui_dir
@@ -550,6 +600,8 @@ def create_app(
         response.headers.setdefault("Content-Security-Policy", _PHONE_CSP)
         response.headers.setdefault("X-Content-Type-Options", "nosniff")
         response.headers.setdefault("Referrer-Policy", "no-referrer")
+        if request.url.path == "/phone-sw.js":
+            response.headers["Cache-Control"] = "no-cache"  # a new app version reaches phones at once
         return response
 
     if ui.is_dir():

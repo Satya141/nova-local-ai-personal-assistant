@@ -1,5 +1,43 @@
 # Changelog
 
+## 0.10.0 (Phase 9: the life timeline) - 2026-10-01
+
+See your days with NOVA, and ask about them.
+
+### Timeline
+- **Ctrl T** in the launcher (and **Timeline** in the phone app) shows your days, newest first: what you asked, what NOVA did (with each action's character, and whether it worked or you cancelled it), what it came to remember, and which reminders rang. **Earlier days** goes further back.
+- **Sum up the day** has the local model write two or three sentences about a day, only when you ask.
+- **Ask about your past**: "what did I do yesterday?", "when did I last open VS Code?", "what did I work on last week?". NOVA looks it up with a new read-only tool, `recall_activity`.
+- Built only from what NOVA already keeps (conversations, the action log, memories, reminders). Nothing new is collected, nothing leaves the PC.
+
+### Dates
+- The time in a question ("yesterday", "last Monday", "3 days ago", "last week", "28 September") is turned into days in code (`nova.dates.past_range`), not by the model, which gets dates wrong. A weekday alone is the most recent one; "last Thursday" said on a Thursday is a week ago.
+- A day's summary is told whether the day is today, yesterday or a named date, instead of working it out (it called yesterday "today").
+
+### Quality
+- 23 new tests (the timeline, local-day boundaries, search, the tool, the API, 16 date phrases). 298 unit tests.
+- Evals: two new scenarios (yesterday's activity without another day's mixed in; when VS Code was last opened), 8/8; the full suite 132/132 (44 scenarios × 3) with the new tool registered.
+- Checked live in the phone app, light and dark, with seeded history and the real model's summary.
+## 0.9.0 (Phase 8, part 1: the phone without the PC) - 2026-10-01
+
+Your phone now works when the PC is off or out of reach: it keeps a copy of what NOVA remembers and your reminders, lets you add to them, and brings every change to the PC when it is back. The pocket AI model that will let you chat offline comes next (part 2).
+
+### Phone
+- **Opens without the PC.** The phone app keeps itself on the phone (a service worker), so it opens from the home screen even when the PC is off.
+- **A copy of the memory and reminders** is kept on the phone and refreshed whenever it reaches the PC (on connecting, on every reminder or new memory, and every two minutes).
+- **Pocket mode** while the PC is away: read what NOVA remembers, add something to remember, set a reminder (quick picks or a date and time), cancel one, forget a memory. A note says how many changes are waiting.
+- **Reminders ring on the phone** while the app is open, from its copy, with Done and Snooze.
+- **Sync both ways.** When the PC is reachable again, the phone sends its changes and gets a fresh copy, by itself.
+
+### Sync
+- `POST /api/sync`: the phone's changes in, a fresh copy out. Each change has an id made on the phone and is applied once, even if sent twice. Changes go through the PC's own stores and checks: passwords and ID numbers are still refused, and "next Friday" counts from the day you said it on the phone, not the day it synced.
+- A reminder the phone rang and you dismissed is not rung again by the PC; one that came due while the phone app was closed is rung by the PC, as missed.
+- Changes from the phone appear under Recent actions ("From My phone, while the PC was away: …").
+- Removing a phone on the PC also wipes its copy, the next time it tries to connect.
+
+### Quality
+- 13 new tests for sync (applied once, memory safety, dates, offline reminders, ringing once, malformed changes). 274 unit tests.
+- Checked live with a test copy of NOVA and a phone-sized Edge: paired, the PC switched off, the app opened offline with the copy, a memory and a reminder added, the reminder rang on the phone and was dismissed, the PC switched back on, the phone reconnected and synced by itself, and the PC had both (the reminder not rung again, "next Friday" as 9 October).
 ## 0.8.0 (Phase 7: NOVA from anywhere) - 2026-10-01
 
 Use NOVA from your phone wherever you are (college, travel, mobile data) while your PC is on at home. Through Tailscale, which you install and sign in to on the PC and the phone; NOVA does the rest. Your memory still lives only on your PC: nothing is stored in a cloud.

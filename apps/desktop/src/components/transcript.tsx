@@ -38,6 +38,12 @@ const TOOL_OWNERS: Record<string, CharacterKind> = {
   github_read: "ember",
   github_comment: "ember",
   github_new_issue: "ember",
+  // Changes made on the phone while the PC was away (recall_activity and phone_remember are Nova's).
+  phone_remind: "chime",
+  phone_dismiss: "chime",
+  phone_snooze: "chime",
+  phone_cancel: "chime",
+  phone_forget: "plum",
 };
 
 export function toolOwner(name: string): CharacterKind {

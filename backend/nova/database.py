@@ -95,6 +95,18 @@ MIGRATIONS: tuple[str, ...] = (
         last_seen  TEXT
     );
     """,
+    # 7: changes a phone made while the PC was off, applied once each when it syncs (Phase 8).
+    """
+    CREATE TABLE sync_ops (
+        id         TEXT PRIMARY KEY,
+        device_id  INTEGER,
+        kind       TEXT NOT NULL,
+        ok         INTEGER NOT NULL,
+        message    TEXT NOT NULL,
+        ref        INTEGER,
+        applied_at TEXT NOT NULL
+    );
+    """,
 )
 
 

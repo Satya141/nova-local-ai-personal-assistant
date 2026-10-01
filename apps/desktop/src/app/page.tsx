@@ -7,6 +7,7 @@ import { type FormEvent, useCallback, useEffect, useRef, useState } from "react"
 import { Character, type CharacterKind, type CharacterState } from "@/components/character";
 import { ChipIcon, MicIcon, ReturnIcon, ScreenIcon, StopIcon } from "@/components/icons";
 import { KnownPanel } from "@/components/known-panel";
+import { TimelinePanel } from "@/components/timeline-panel";
 import { Transcript } from "@/components/transcript";
 import {
   type VoiceState,
@@ -88,8 +89,10 @@ export default function Launcher() {
   const [voiceNote, setVoiceNote] = useState<string | null>(null);
   // The screen button: the next message is sent with a look at the user's window.
   const [screenArmed, setScreenArmed] = useState(false);
-  // The "Memory & reminders" panel, shown instead of the conversation.
-  const [showKnown, setShowKnown] = useState(false);
+  // A panel shown instead of the conversation: "Memory & reminders" (Ctrl M) or the timeline (Ctrl T).
+  const [side, setSide] = useState<"known" | "timeline" | null>(null);
+  const showKnown = side === "known";
+  const toggle = (which: "known" | "timeline") => setSide((shown) => (shown === which ? null : which));
 
   const panel = useRef<HTMLElement>(null);
   const field = useRef<HTMLInputElement>(null);
@@ -251,7 +254,7 @@ export default function Launcher() {
       setInput("");
       setCelebrating(false);
       setScreenArmed(false);
-      setShowKnown(false);
+      setSide(null);
       // Typing takes over from talking.
       if (voiceActive) stopVoice();
       agent.send(message, { screen: withScreen || screenArmed });
@@ -268,11 +271,14 @@ export default function Launcher() {
         invoke("hide_launcher").catch(() => {});
       } else if (event.ctrlKey && event.key.toLowerCase() === "n") {
         event.preventDefault();
-        setShowKnown(false);
+        setSide(null);
         startOver();
       } else if (event.ctrlKey && event.key.toLowerCase() === "m") {
         event.preventDefault();
-        setShowKnown((shown) => !shown);
+        toggle("known");
+      } else if (event.ctrlKey && event.key.toLowerCase() === "t") {
+        event.preventDefault();
+        toggle("timeline");
       }
     };
     window.addEventListener("keydown", onKey);
@@ -380,9 +386,9 @@ export default function Launcher() {
         </p>
       )}
 
-      {showKnown && ready ? (
+      {side && ready ? (
         <div className="known-panel min-h-0 flex-1 overflow-y-auto border-t border-line px-4 py-3">
-          <KnownPanel />
+          {side === "known" ? <KnownPanel /> : <TimelinePanel />}
         </div>
       ) : agent.items.length > 0 ? (
         <div ref={scroller} className="transcript min-h-0 flex-1 overflow-y-auto border-t border-line px-4 py-3">
@@ -429,17 +435,27 @@ export default function Launcher() {
               Say &ldquo;Hey Nova&rdquo;
             </span>
           )}
-          {ready && (
+          {ready && side !== "known" && (
             <button
               type="button"
-              onClick={() => setShowKnown(!showKnown)}
+              onClick={() => toggle("timeline")}
+              aria-pressed={side === "timeline"}
+              className="known-toggle rounded hover:text-text focus-visible:outline-2 focus-visible:outline-accent"
+            >
+              <kbd className="keycap-inline">Ctrl T</kbd> {side === "timeline" ? "Back to chat" : "Timeline"}
+            </button>
+          )}
+          {ready && side !== "timeline" && (
+            <button
+              type="button"
+              onClick={() => toggle("known")}
               aria-pressed={showKnown}
               className="known-toggle rounded hover:text-text focus-visible:outline-2 focus-visible:outline-accent"
             >
               <kbd className="keycap-inline">Ctrl M</kbd> {showKnown ? "Back to chat" : "Memory & reminders"}
             </button>
           )}
-          {agent.items.length > 0 && !showKnown && (
+          {agent.items.length > 0 && !side && (
             <span>
               <kbd className="keycap-inline">Ctrl N</kbd> New chat
             </span>
