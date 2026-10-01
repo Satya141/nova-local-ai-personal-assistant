@@ -1,6 +1,6 @@
 [project]
 name = "nova-backend"
-version = "0.1.0"
+version = "0.11.0"
 description = "NOVA agent backend: model routing, tools, permissions and memory."
 requires-python = ">=3.12"
 dependencies = [

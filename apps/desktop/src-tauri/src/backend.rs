@@ -38,8 +38,8 @@ impl Backend {
     self.error.lock().unwrap().clone()
   }
 
-  pub fn start(&self, log_dir: &Path) {
-    match self.spawn(log_dir) {
+  pub fn start(&self, log_dir: &Path, resource_dir: Option<PathBuf>) {
+    match self.spawn(log_dir, resource_dir) {
       Ok(child) => {
         log::info!("backend started (pid {}) on port {}", child.id(), self.port);
         *self.child.lock().unwrap() = Some(child);
@@ -51,24 +51,24 @@ impl Backend {
     }
   }
 
-  fn spawn(&self, log_dir: &Path) -> Result<Child, String> {
-    let dir = backend_dir();
-    let python = python_path(&dir);
-    if !python.exists() {
-      return Err(format!(
-        "NOVA's backend is not set up: {} is missing. Run scripts\\setup.ps1.",
-        python.display()
-      ));
+  fn spawn(&self, log_dir: &Path, resource_dir: Option<PathBuf>) -> Result<Child, String> {
+    let layout = Layout::find(resource_dir);
+    if !layout.python.exists() {
+      return Err(if layout.installed {
+        format!("NOVA's installation is damaged: {} is missing. Reinstall NOVA.", layout.python.display())
+      } else {
+        format!("NOVA's backend is not set up: {} is missing. Run scripts\\setup.ps1.", layout.python.display())
+      });
     }
 
     fs::create_dir_all(log_dir).map_err(|e| format!("Cannot create log folder: {e}"))?;
     let log = File::create(log_dir.join("backend.log")).map_err(|e| format!("Cannot create backend log: {e}"))?;
     let log_err = log.try_clone().map_err(|e| format!("Cannot create backend log: {e}"))?;
 
-    let mut command = Command::new(&python);
+    let mut command = Command::new(&layout.python);
     command
       .args(["-m", "nova"])
-      .current_dir(&dir)
+      .current_dir(&layout.dir)
       .env("NOVA_API_TOKEN", &self.token)
       .env("NOVA_PORT", self.port.to_string())
       // The backend exits when this process does, even if we crash.
@@ -77,6 +77,12 @@ impl Backend {
       .stdin(Stdio::null())
       .stdout(log)
       .stderr(log_err);
+    if layout.installed {
+      // What a checkout finds by its own layout, an installation is told.
+      command
+        .env("NOVA_MODELS_DIR", layout.dir.join("models"))
+        .env("NOVA_PHONE_UI_DIR", layout.dir.join("phone-ui"));
+    }
 
     #[cfg(windows)]
     {
@@ -96,19 +102,41 @@ impl Backend {
   }
 }
 
-/// Where the backend lives. Until NOVA ships an installer with a bundled
-/// interpreter, that is the repository this binary was built from.
-fn backend_dir() -> PathBuf {
-  std::env::var_os("NOVA_BACKEND_DIR")
-    .map(PathBuf::from)
-    .unwrap_or_else(|| PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../../../backend")))
+/// Where the backend and its Python are.
+///
+/// An installed NOVA carries them in its resources (see scripts/package.ps1):
+/// ackend/python (Python's embeddable distribution, whose ._pth file points
+/// at ackend/app and ackend/site-packages), ackend/models and
+/// ackend/phone-ui. A development build uses the repository it was built from
+/// and its virtual environment, or NOVA_BACKEND_DIR.
+struct Layout {
+  dir: PathBuf,
+  python: PathBuf,
+  installed: bool,
 }
 
-fn python_path(backend_dir: &Path) -> PathBuf {
-  if cfg!(windows) {
-    backend_dir.join(".venv").join("Scripts").join("python.exe")
-  } else {
-    backend_dir.join(".venv").join("bin").join("python")
+impl Layout {
+  fn find(resource_dir: Option<PathBuf>) -> Self {
+    if let Some(dir) = std::env::var_os("NOVA_BACKEND_DIR") {
+      return Self::checkout(PathBuf::from(dir));
+    }
+    if let Some(resources) = resource_dir {
+      let dir = resources.join("backend");
+      let python = dir.join("python").join(if cfg!(windows) { "python.exe" } else { "python3" });
+      if python.exists() {
+        return Self { dir, python, installed: true };
+      }
+    }
+    Self::checkout(PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../../../backend")))
+  }
+
+  fn checkout(dir: PathBuf) -> Self {
+    let python = if cfg!(windows) {
+      dir.join(".venv").join("Scripts").join("python.exe")
+    } else {
+      dir.join(".venv").join("bin").join("python")
+    };
+    Self { dir, python, installed: false }
   }
 }
 

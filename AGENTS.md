@@ -35,6 +35,7 @@ apps/desktop/            Tauri 2 shell + Next.js 16 UI. A thin client.
   src/components/        characters, icons, transcript, reminder card, memory & reminders panel
   src/lib/               backend client and the conversation state hook
 scripts/setup.ps1        one-time dev setup
+scripts/package.ps1      builds the installer (embeddable Python + the .venv's packages + models)
 ```
 
 ## Commands
@@ -52,6 +53,7 @@ scripts/setup.ps1        one-time dev setup
 | Frontend type-check | `pnpm --dir apps/desktop exec tsc --noEmit` |
 | Character gallery | `pnpm --dir apps/desktop dev`, then open http://localhost:3000/gallery |
 | Release build (no installer) | `pnpm --dir apps/desktop tauri build --no-bundle` |
+| Installer | `powershell -ExecutionPolicy Bypass -File scripts\package.ps1 -PythonZip <python-3.12.x-embed-amd64.zip>` |
 
 Run the evals after any change to a prompt, a tool description, the memory pipeline, or anything in `nova/voice` (hints, thresholds, cut points). Unit tests cannot tell you whether the models still behave. Run each more than once: model output varies between runs. Keep checks strict (the voice eval anchors commands to the start; a loose check hid leaked words for a whole iteration). Add a case for every behaviour bug found in real use.
 
@@ -102,4 +104,4 @@ Processes started from inside a sandboxed (MSIX-packaged) host see a private cop
 
 ## Current scope
 
-Phases 1 to 7 are done (6 as a phone web app, chosen with the user, encrypted with NOVA's own certificate, paired by QR code, found by its .local name on any shared Wi-Fi; 7 as access from anywhere through the user's own Tailscale, with one memory on the PC rather than synced copies). Tailscale has not yet been tried for real. The Gmail, Calendar and GitHub tools have not yet been run against the real services, and the phone app not yet on the user's real phone. Phase 8 part 1 is done (the phone keeps a copy and an outbox and works while the PC is away); part 2, a small model in the phone's browser for offline chat, waits for the user's approval of the web-llm and model downloads. Phase 9 (the life timeline, assembled from existing tables, with `recall_activity` and on-request day summaries) is done. Not built yet: the installer (10). A trained wake-word model could replace the speech-recognition wake check later; `Transcriber.find_wake` is the seam. Do not start those without being asked, and do not add abstractions for them in advance.
+Phases 1 to 7 are done (6 as a phone web app, chosen with the user, encrypted with NOVA's own certificate, paired by QR code, found by its .local name on any shared Wi-Fi; 7 as access from anywhere through the user's own Tailscale, with one memory on the PC rather than synced copies). Tailscale has not yet been tried for real. The Gmail, Calendar and GitHub tools have not yet been run against the real services, and the phone app not yet on the user's real phone. Phase 8 part 1 is done (the phone keeps a copy and an outbox and works while the PC is away); part 2, a small model in the phone's browser for offline chat, waits for the user's approval of the web-llm and model downloads. Phase 9 (the life timeline, assembled from existing tables, with `recall_activity` and on-request day summaries) is done. Phase 10 is done: the first-run setup screen (`nova/setup_check.py`), the shell's installed layout (`Layout::find`) and `scripts/package.ps1`; the installer builds (417 MB) and its layout was run from the build folder, but it has not been installed on a clean PC. A bundle build copies `backend\` next to `target\release\nova.exe`; delete that copy afterwards, or the development build runs the stale copy instead of the checkout. A trained wake-word model could replace the speech-recognition wake check later; `Transcriber.find_wake` is the seam. Do not start those without being asked, and do not add abstractions for them in advance.

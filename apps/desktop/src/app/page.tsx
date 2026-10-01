@@ -7,6 +7,7 @@ import { type FormEvent, useCallback, useEffect, useRef, useState } from "react"
 import { Character, type CharacterKind, type CharacterState } from "@/components/character";
 import { ChipIcon, MicIcon, ReturnIcon, ScreenIcon, StopIcon } from "@/components/icons";
 import { KnownPanel } from "@/components/known-panel";
+import { SetupCard } from "@/components/setup-card";
 import { TimelinePanel } from "@/components/timeline-panel";
 import { Transcript } from "@/components/transcript";
 import {
@@ -26,7 +27,9 @@ import { useAgent } from "@/lib/use-agent";
 type Status =
   | { kind: "starting" }
   | { kind: "ready"; model: string; vision: boolean }
-  | { kind: "problem"; message: string };
+  | { kind: "problem"; message: string }
+  // The backend runs but its model does not (a first run): the setup card says what to do.
+  | { kind: "setup"; message: string };
 
 const SUGGESTIONS: { who: CharacterKind; text: string; screen?: boolean }[] = [
   { who: "iris", text: "Explain what's on my screen", screen: true },
@@ -67,7 +70,7 @@ async function connect(): Promise<{ status: Status; shortcut: string }> {
       const report = await health();
       const status: Status = report.model_ready
         ? { kind: "ready", model: report.model, vision: report.vision_ready }
-        : { kind: "problem", message: report.detail ?? "The model is not ready." };
+        : { kind: "setup", message: report.detail ?? "The model is not ready." };
       return { status, shortcut: info.shortcut };
     } catch {
       await sleep(500);
@@ -291,7 +294,7 @@ export default function Launcher() {
   };
 
   const face: CharacterState =
-    status.kind === "starting" ? "asleep"
+    status.kind === "starting" || status.kind === "setup" ? "asleep"
     : status.kind === "problem" ? "error"
     : voiceState === "listening" ? "hearing"
     : voiceState === "transcribing" ? "thinking"
@@ -373,6 +376,8 @@ export default function Launcher() {
           <kbd className="keycap" aria-hidden="true">Esc</kbd>
         )}
       </form>
+
+      {status.kind === "setup" && <SetupCard onReady={() => void refresh()} />}
 
       {status.kind === "problem" && (
         <p role="alert" className="selectable border-t border-line px-4 py-2.5 text-[13px] text-danger">

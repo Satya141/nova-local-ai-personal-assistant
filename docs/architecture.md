@@ -225,13 +225,20 @@ Read-only tools stay free, so reading and summarising pages is not slowed down. 
 **One read-only tool.** `recall_activity(when, about)` takes the time in the user's words, and `nova.dates.past_range` turns it into days (the same reason as rule 5: the model's date arithmetic is unreliable). With `about` it searches all of the history, newest first, for "when did I last…". Results go through `timeline.describe`: at most 40 lines, grouped under spelled-out dates, with declined, blocked and failed actions marked, so the reply can be accurate and the prompt stays small (rule 16). It is `read_only` and not `reads_untrusted`: everything in it was written by the user or by NOVA.
 
 **Summaries on request.** `POST /api/timeline/summary` asks the local model for two or three sentences through `complete_json`, only when the user presses the button; nothing is pre-computed or stored. The prompt names the day ("today", "yesterday", "on Monday 28 September") because, given only a date, the model called yesterday "today".
+### Phase 10: installing
+
+**An embeddable Python, not a frozen executable.** The installer carries Python's official embeddable distribution (about 11 MB) with a `._pth` file that adds `..\app` (the `nova` package) and `..\site-packages` (copied from the checkout's .venv, without pytest, pip and the editable link). Nothing is re-downloaded or recompiled, compiled packages (CTranslate2, onnxruntime, PyAV) load as they do in development, and the staged Python is import-tested before the installer is built. PyInstaller would have been another download and another way for native packages to break. The cost is size: about 480 MB of packages and 324 MB of voice models before compression.
+
+**Found by the shell.** `backend.rs`'s `Layout::find` looks for `backend\python\python.exe` in the app's resources and, when it is there, tells the backend where its models and phone app are (`NOVA_MODELS_DIR`, `NOVA_PHONE_UI_DIR`); otherwise it uses the checkout the binary was built from. Data stays in `%LOCALAPPDATA%\NOVA`, so reinstalling or uninstalling keeps memories.
+
+**Ollama stays separate.** It is its own program with its own updates, and the models are several gigabytes, so neither is bundled. `nova/setup_check.py` reports what is missing and streams Ollama's own `/api/pull` progress when the user presses a model's button; a role, not a model name, is what the client sends, so nothing else can be fetched this way, and the routes are PC-only.
 ## Layout differences from the original plan
 
 The plan listed `inference/`, `voice/`, `vision/` and `sync/` as top-level folders. They are instead subpackages of `backend/nova/` as they get built, so there is a single importable Python package and one virtual environment.
 
 ## Known limits
 
-- The shell finds the backend at the repository path it was built from (override with `NOVA_BACKEND_DIR`). There is no installer that bundles Python yet, so a release build only runs on a machine with this checkout.
+- A development build finds the backend at the repository path it was built from (override with `NOVA_BACKEND_DIR`); an installed one, in its resources. `scripts\package.ps1` builds the installer (417 MB for 0.11.0); it has been checked by running the installed layout from the build folder, not yet by installing it on a clean PC.
 - Windows only. The tools return a clear "not implemented" result elsewhere.
 - File search walks the home folder for up to 5 s and matches names only, not contents.
 - One conversation at a time in the launcher; a fresh one starts after 20 idle minutes, and older ones are stored but not browsable yet. Memory carries across conversations.

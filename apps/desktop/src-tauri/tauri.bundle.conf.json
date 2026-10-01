@@ -1,0 +1,13 @@
+{
+  "bundle": {
+    "resources": {
+      "../../../dist/backend/": "backend/"
+    },
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser",
+        "displayLanguageSelector": false
+      }
+    }
+  }
+}

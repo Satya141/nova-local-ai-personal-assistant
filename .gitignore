@@ -16,3 +16,6 @@ Thumbs.db
 
 # Downloaded voice models (large; fetched by scripts/setup.ps1)
 backend/models/
+
+# Installer staging (scripts/package.ps1)
+dist/

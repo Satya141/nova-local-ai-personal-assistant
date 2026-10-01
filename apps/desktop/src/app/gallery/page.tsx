@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { Character, type CharacterKind, type CharacterState } from "@/components/character";
 import { AwayFromHome, PairingCard } from "@/components/phone-access";
 import { ReminderCard } from "@/components/reminder-card";
+import { SetupCard } from "@/components/setup-card";
 import { Transcript } from "@/components/transcript";
 import type { Reminder } from "@/lib/backend";
 import type { Item } from "@/lib/use-agent";
@@ -125,6 +126,29 @@ export default function Gallery() {
             {reminders.map((reminder) => (
               <ReminderCard key={reminder.id} reminder={reminder} onDone={() => {}} onSnooze={() => {}} />
             ))}
+          </div>
+        </section>
+        <section>
+          <h2 className="text-lg font-semibold">First run</h2>
+          <div className="mt-4 flex w-[688px] flex-col gap-4">
+            <div className="rounded-xl border border-line">
+              <SetupCard onReady={() => {}} preview={{ ollama: false, ollama_url: "http://127.0.0.1:11434", ready: false, models: [] }} />
+            </div>
+            <div className="rounded-xl border border-line">
+              <SetupCard
+                onReady={() => {}}
+                preview={{
+                  ollama: true,
+                  ollama_url: "http://127.0.0.1:11434",
+                  ready: false,
+                  models: [
+                    { role: "chat", name: "qwen3:8b", purpose: "Understands you and acts. Required.", required: true, present: false, downloading: false },
+                    { role: "vision", name: "qwen3-vl:8b", purpose: "Reads your screen when you ask. Optional.", required: false, present: false, downloading: false },
+                    { role: "embed", name: "embeddinggemma", purpose: "Finds memories by meaning. Optional.", required: false, present: true, downloading: false },
+                  ],
+                }}
+              />
+            </div>
           </div>
         </section>
         <section>

@@ -306,7 +306,7 @@ pub fn run() {
     })
     .setup(|app| {
       let handle = app.handle();
-      handle.state::<Backend>().start(&handle.path().app_log_dir()?);
+      handle.state::<Backend>().start(&handle.path().app_log_dir()?, handle.path().resource_dir().ok());
 
       let shortcut = register_shortcut(handle);
       *handle.state::<ActiveShortcut>().0.lock().unwrap() = shortcut.clone();

@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.11.0 (Phase 10: the installer) - 2026-10-01
+
+NOVA now builds into a Windows installer: `NOVA_0.11.0_x64-setup.exe`, 417 MB, per-user, no admin rights. It carries Python, NOVA's packages and the voice models; the first-run screen helps with Ollama and the language models.
+
+### First run
+- When NOVA's model is not there yet, the launcher shows **Set up NOVA's thinking** instead of an error: whether Ollama is installed and running (with a link to ollama.com/download, noticed by itself once it is), and each of NOVA's models with a **Download** button and a progress bar. Nothing downloads until you press it, and only the models in NOVA's settings can be fetched (`GET /api/setup`, `POST /api/setup/pull/{role}`, PC only).
+- The optional models (screen and memory search) can come later: **Start using NOVA now** appears as soon as the required one is in.
+
+### Installing
+- The shell finds an installed backend in its resources (`backend\python`, `app`, `site-packages`, `models`, `phone-ui`) and falls back to the checkout it was built from, as before.
+- `scripts\package.ps1 -PythonZip <python-3.12.x-embed-amd64.zip>` stages that layout from a set-up checkout (Python's official embeddable package, NOVA's code, the .venv's packages minus test tools and pip, the voice models, the phone app), checks that the staged Python imports everything, and builds a per-user NSIS installer (no admin rights). Ollama and the language models are not bundled; the first-run screen offers them.
+- Version 0.11.0 across the backend, the shell and the interface.
+
+### Quality
+- 6 new tests for the first-run check against a pretend Ollama (missing, running, tags, progress, errors, only NOVA's own models). 304 unit tests.
+- Built for real (Python 3.12.2 embeddable package, Tauri's NSIS tools): the staged Python imported every package, and the installed layout, run from the build folder with test data, started its backend on the bundled Python and found the voice models. Not installed on this PC.
+- The phone's pocket model (about 1 GB) is left out of the installer.
+- The setup screen checked in the design gallery, with Ollama missing and with models to download.
 ## 0.10.0 (Phase 9: the life timeline) - 2026-10-01
 
 See your days with NOVA, and ask about them.

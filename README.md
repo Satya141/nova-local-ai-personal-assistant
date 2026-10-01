@@ -4,7 +4,7 @@
 
 NOVA is an open-source, local-first AI personal assistant. It runs a language model on your own computer, and it acts: ask it to open an app, find a file or remind you of something and it does that, rather than telling you how.
 
-This repository is at **Phase 9**: a Windows desktop agent with long-term memory, reminders, voice, screen understanding, web browsing, file organising, scheduled tasks, your Gmail, Google Calendar and GitHub, and a phone app that works on your Wi-Fi or, with Tailscale, from anywhere. Distributed inference and the life timeline are planned and not built yet.
+This repository is at **Phase 10** (part 1): a Windows desktop agent with long-term memory, reminders, voice, screen understanding, web browsing, file organising, scheduled tasks, your Gmail, Google Calendar and GitHub, and a phone app that works on your Wi-Fi or, with Tailscale, from anywhere. Distributed inference and the life timeline are planned and not built yet.
 
 ![NOVA reading an error from the window behind it](docs/screenshots/screen.png)
 
@@ -51,6 +51,13 @@ The first command creates the Python environment, installs dependencies and down
 
 If another app already uses Alt+Space, NOVA takes Ctrl+Alt+Space instead and shows that in the launcher's footer and the tray tooltip.
 
+## Build the installer
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\package.ps1 -PythonZip C:\path\to\python-3.12.2-embed-amd64.zip
+```
+
+From a checkout set up with `scripts\setup.ps1`. The Python zip is the "Windows embeddable package (64-bit)" from python.org, in the same 3.12 version as `backend\.venv`. The result is a per-user installer in `apps\desktop\src-tauri\target\release\bundle\nsis`. It includes Python, NOVA's packages and the voice models; on first run NOVA helps install Ollama and download the language models.
 ## Use NOVA from your phone
 
 1. On the PC: open NOVA, press **Ctrl M**, and under **Phone** click **Turn on**. The first time, Windows may ask whether Python may use the network: allow it on **private networks** only.

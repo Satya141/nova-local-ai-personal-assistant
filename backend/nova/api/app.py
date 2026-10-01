@@ -39,6 +39,7 @@ from nova.phone.devices import DeviceStore
 from nova.phone.certs import Certificates
 from nova.phone.service import PhoneAccess, qr_svg
 from nova.phone.sync import Sync, SyncRequest
+from nova.setup_check import SetupCheck
 from nova.timeline import Timeline
 from nova.timeline import describe as describe_timeline
 from nova.scheduler import ReminderStore, Scheduler
@@ -97,7 +98,7 @@ class PairRequest(BaseModel):
 
 # Routes a phone may never use: account credentials, the PC's microphone and speakers, and phone
 # access itself (a phone must not be able to pair more phones or remove the PC's control).
-_DESKTOP_ONLY = ("/api/connections", "/api/voice", "/api/phone")
+_DESKTOP_ONLY = ("/api/connections", "/api/voice", "/api/phone", "/api/setup")
 # Pages served to phones: the app's own scripts and styles, and nowhere else to talk to.
 _PHONE_CSP = (
     "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; "
@@ -203,6 +204,11 @@ def create_app(
         app.state.connections = accounts
         app.state.registry = registry
         app.state.provider = model
+        setup = SetupCheck(
+            settings.ollama_url,
+            {"chat": settings.model, "vision": settings.vision_model, "embed": settings.embed_model},
+        )
+        app.state.setup = setup
         app.state.vision = vision
         app.state.bus = bus
         app.state.store = store
@@ -248,6 +254,7 @@ def create_app(
             if vision is not None and vision is not model:
                 await vision.aclose()
             await model.aclose()
+            await setup.aclose()
             db.close()
 
     def authorize(request: Request) -> None:
@@ -307,6 +314,21 @@ def create_app(
             # Whether NOVA can look at the screen; the UI shows the screen button only then.
             "vision_ready": bool(vision_status and vision_status.ready),
         }
+
+    @app.get("/api/setup")
+    async def setup_status(request: Request) -> dict:
+        """What a first run still needs: Ollama, and which of NOVA's models it has."""
+        return await request.app.state.setup.status()
+
+    @app.post("/api/setup/pull/{role}")
+    async def setup_pull(role: str, request: Request) -> StreamingResponse:
+        """Download one of NOVA's models through Ollama (the user pressed its button), as NDJSON progress."""
+
+        async def lines() -> AsyncIterator[str]:
+            async for event in request.app.state.setup.pull(role):
+                yield json.dumps(event) + "\n"
+
+        return StreamingResponse(lines(), media_type="application/x-ndjson", headers=_NDJSON_HEADERS)
 
     @app.post("/api/warmup", status_code=status.HTTP_202_ACCEPTED)
     async def warmup(request: Request, background: BackgroundTasks, vision: bool = False) -> dict:

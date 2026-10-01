@@ -2229,7 +2229,7 @@ checksum = "650eef8c711430f1a879fdd01d4745a7deea475becfb90269c06775983bbf086"
 
 [[package]]
 name = "nova"
-version = "0.1.0"
+version = "0.11.0"
 dependencies = [
  "getrandom 0.3.4",
  "log",

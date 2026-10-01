@@ -185,6 +185,32 @@ export const newPairingCode = () =>
   phoneCall<{ code: string; expires_in: number; url: string; qr: string | null }>("/api/phone/code", { method: "POST" });
 export const removePhone = (id: number) => phoneCall<PhoneAccessStatus>(`/api/phone/devices/${id}`, { method: "DELETE" });
 
+// --- first run: Ollama and NOVA's models (backend/nova/setup_check.py) ------------------------
+
+export type SetupModel = {
+  role: "chat" | "vision" | "embed";
+  name: string;
+  purpose: string;
+  required: boolean;
+  present: boolean;
+  downloading: boolean;
+};
+export type SetupStatus = { ollama: boolean; ollama_url: string; models: SetupModel[]; ready: boolean };
+export type PullProgress = { status?: string; total?: number; completed?: number; done?: boolean; error?: string };
+
+export async function setupStatus(): Promise<SetupStatus> {
+  const response = await request("/api/setup");
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  return response.json();
+}
+
+/** Download one of NOVA's models through Ollama, reporting progress. Resolves when it ends. */
+export async function pullModel(role: SetupModel["role"], onProgress: (event: PullProgress) => void): Promise<void> {
+  const response = await request(`/api/setup/pull/${role}`, { method: "POST" });
+  if (!response.ok || !response.body) throw new Error(`HTTP ${response.status}`);
+  for await (const event of readLines<PullProgress>(response.body)) onProgress(event);
+}
+
 // --- the life timeline (backend/nova/timeline.py) ---------------------------------------------
 
 export type TimelineEntry = {
