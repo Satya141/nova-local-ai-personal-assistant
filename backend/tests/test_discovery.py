@@ -83,7 +83,7 @@ def free_port() -> int:
 async def test_phone_access_follows_the_pc_from_network_to_network(db, tmp_path, monkeypatch):
     network = {"address": "127.0.0.1"}
     monkeypatch.setattr(service, "home_network_address", lambda: network["address"])
-    monkeypatch.setattr(service, "network_profile", lambda address: None)
+    monkeypatch.setattr(service, "interfaces", lambda: [])
     monkeypatch.setattr(service, "WATCH_SECONDS", 0.05)
 
     async def app(scope, receive, send):  # a stand-in for NOVA's API
@@ -122,7 +122,7 @@ async def test_phone_access_follows_the_pc_from_network_to_network(db, tmp_path,
 async def test_switching_off_in_the_middle_of_a_network_change_does_not_hang(db, tmp_path, monkeypatch):
     network = {"address": "127.0.0.1"}
     monkeypatch.setattr(service, "home_network_address", lambda: network["address"])
-    monkeypatch.setattr(service, "network_profile", lambda address: None)
+    monkeypatch.setattr(service, "interfaces", lambda: [])
     monkeypatch.setattr(service, "WATCH_SECONDS", 0.01)
 
     async def app(scope, receive, send):

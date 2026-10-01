@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 
 import { Character, type CharacterKind, type CharacterState } from "@/components/character";
-import { PairingCard } from "@/components/phone-access";
+import { AwayFromHome, PairingCard } from "@/components/phone-access";
 import { ReminderCard } from "@/components/reminder-card";
 import { Transcript } from "@/components/transcript";
 import type { Reminder } from "@/lib/backend";
@@ -138,6 +138,10 @@ export default function Gallery() {
               certificate={{ name: "NOVA on Satya-laptop", fingerprint: "37:21:C8:F2" }}
               onCancel={() => {}}
             />
+            <div className="mt-4 flex flex-col gap-1 rounded-xl border border-line p-2">
+              <AwayFromHome remoteUrl={null} />
+              <AwayFromHome remoteUrl="https://100.101.102.103:8767" />
+            </div>
           </div>
         </section>
       </div>

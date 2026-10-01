@@ -4,7 +4,7 @@
 
 NOVA is an open-source, local-first AI personal assistant. It runs a language model on your own computer, and it acts: ask it to open an app, find a file or remind you of something and it does that, rather than telling you how.
 
-This repository is at **Phase 6**: a Windows desktop agent with long-term memory, reminders, voice, screen understanding, web browsing, file organising, scheduled tasks, your Gmail, Google Calendar and GitHub, and a phone app for your home Wi-Fi. Shared memory across devices and distributed inference are planned and not built yet.
+This repository is at **Phase 7**: a Windows desktop agent with long-term memory, reminders, voice, screen understanding, web browsing, file organising, scheduled tasks, your Gmail, Google Calendar and GitHub, and a phone app that works on your Wi-Fi or, with Tailscale, from anywhere. Distributed inference and the life timeline are planned and not built yet.
 
 ![NOVA reading an error from the window behind it](docs/screenshots/screen.png)
 
@@ -59,6 +59,15 @@ If another app already uses Alt+Space, NOVA takes Ctrl+Alt+Space instead and sho
 5. Chrome's menu → *Add to Home screen* gives it an icon.
 
 After that, the phone finds NOVA by itself on any Wi-Fi you both join (home, office, a friend's place), at `nova-<your PC>.local`; this needs Android 12 or later. If Windows calls a Wi-Fi *Public*, its firewall blocks the phone: NOVA's panel tells you, and you can mark a network you trust as Private in Windows' Wi-Fi settings. Office networks that keep devices apart cannot be used. The phone talks to NOVA on your PC: the PC must be on, with NOVA running. Remove a phone under Ctrl M → Phone at any time. NOVA's certificate can only vouch for addresses on home networks, never for a website, so installing it does not let anyone impersonate other sites to your phone.
+
+### From anywhere (Tailscale)
+
+To use NOVA when your phone is not on the PC's Wi-Fi (at college, travelling, on mobile data):
+1. Install [Tailscale](https://tailscale.com/download) on the PC and on the phone, and sign in to the same account on both. It is free for personal use.
+2. NOVA notices it by itself within half a minute: Ctrl M → Phone shows **Away from home: On**.
+3. Pair the phone once more (scan the QR code with Tailscale on). From then on it reaches NOVA at home and away.
+
+The PC must be on, online and running NOVA. Your memory stays on the PC; Tailscale only carries encrypted traffic between your own devices.
 
 ## Connect your accounts
 

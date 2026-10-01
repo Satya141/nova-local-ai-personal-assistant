@@ -161,6 +161,8 @@ export type PhoneAccessStatus = {
   app_url: string | null;
   /** The phone app at NOVA's .local name: the same on every Wi-Fi, so a phone pairs once. */
   name_url: string | null;
+  /** The phone app at the PC's Tailscale address, reachable from anywhere; null without Tailscale. */
+  remote_url: string | null;
   /** The network the PC is on, as Windows classifies it ("Public" blocks phones). */
   network: { name: string; category: string } | null;
   /** NOVA's certificate authority, as the phone shows it: its name and the start of its fingerprint. */

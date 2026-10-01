@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.8.0 (Phase 7: NOVA from anywhere) - 2026-10-01
+
+Use NOVA from your phone wherever you are (college, travel, mobile data) while your PC is on at home. Through Tailscale, which you install and sign in to on the PC and the phone; NOVA does the rest. Your memory still lives only on your PC: nothing is stored in a cloud.
+
+### Away from home
+- NOVA notices Tailscale on the PC by itself (within half a minute of it connecting) and opens phone access on the PC's Tailscale address too, next to the home network. It notices Tailscale going away as well.
+- The phone's setup page tries the Tailscale address first, then NOVA's `.local` name, then the address on this Wi-Fi, and uses the first the phone can reach. A phone paired through Tailscale keeps working at home and away, on any Wi-Fi or mobile data.
+- Ctrl M → Phone has an **Away from home** line: how to set up Tailscale (a link to its download page), or the address phones reach NOVA at once it is on.
+- If the PC leaves the Wi-Fi but keeps Tailscale (say, on a phone's hotspot), phone access carries on through Tailscale alone.
+
+### Safety
+- On the Tailscale address, NOVA accepts only senders with Tailscale addresses; on the home network, only private ones. Pairing keys, HTTPS and the desktop-only routes are unchanged.
+- Tailscale encrypts the connection end to end on top of NOVA's own HTTPS. NOVA's certificate authority may now vouch for Tailscale's address range (100.64.0.0/10), which no website uses; an authority made under older rules is replaced, and the phone installs the new one once.
+- Tailscale's interface is recognised by name, so other VPNs in the same address range (Cloudflare WARP's Zero Trust mode) do not count.
+
+### Quality
+- Tests: only Tailscale's own interface counts, the certificate covers the Tailscale address and still refuses one just outside it, phone access opens on both addresses and turns away non-Tailscale senders on the Tailscale one, and Tailscale appearing, the Wi-Fi going away and Tailscale going away are all followed. 261 unit tests.
+- Not yet tried with Tailscale itself: it is not installed on this PC, and installing it and signing in is the user's step.
 ## 0.7.2 (phone: any Wi-Fi you share) - 2026-10-01
 
 Pair once; after that, wherever your phone and PC are on the same Wi-Fi (home, office, a friend's place), the phone finds NOVA by itself.

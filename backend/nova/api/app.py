@@ -8,7 +8,6 @@ web page open in the user's browser could drive the agent.
 from __future__ import annotations
 
 import asyncio
-import ipaddress
 import json
 import mimetypes
 import secrets
@@ -253,13 +252,8 @@ def create_app(
         phone: PhoneAccess | None = getattr(request.app.state, "phone", None)
         request.state.device = None
         if phone is not None and phone.serves(request.scope.get("server")):
-            client = request.scope.get("client")
-            try:
-                private = client is not None and ipaddress.ip_address(client[0]).is_private
-            except ValueError:
-                private = False
-            if not private:
-                raise HTTPException(status.HTTP_403_FORBIDDEN, "Phone access is for the home network only")
+            if not phone.client_allowed(request.scope.get("server"), request.scope.get("client")):
+                raise HTTPException(status.HTTP_403_FORBIDDEN, "Phone access is for your own network and devices only")
             if not path.startswith("/api/") or path == "/api/pair":
                 return  # the phone app's own files, and pairing, which checks its code
             if path.startswith(_DESKTOP_ONLY):

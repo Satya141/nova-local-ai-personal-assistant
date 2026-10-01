@@ -33,12 +33,17 @@ AUTHORITY_DAYS = 3650
 SERVER_DAYS = 397
 # Make a new authority this long before the old one expires (the phone installs it again).
 RENEW_DAYS = 30
-# The only addresses and names NOVA's authority may vouch for: private IP addresses, and names
-# under .local, which exist only on the local network and never on the internet. (Some DNS
-# entry must be listed: with none at all, every DNS name would be permitted.)
-PERMITTED_NETWORKS = ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "127.0.0.0/8")
+# The only addresses and names NOVA's authority may vouch for: private IP addresses, Tailscale's
+# shared address space (100.64.0.0/10, never a website's), and names under .local, which exist
+# only on the local network. (Some DNS entry must be listed: with none at all, every DNS name
+# would be permitted.)
+PERMITTED_NETWORKS = ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "127.0.0.0/8", "100.64.0.0/10")
 PERMITTED_DOMAIN = "local"
 _KEY_NAME = "phone-authority"
+
+
+def _permitted() -> list[x509.GeneralName]:
+    return [x509.IPAddress(ipaddress.ip_network(n)) for n in PERMITTED_NETWORKS] + [x509.DNSName(PERMITTED_DOMAIN)]
 
 
 def _now() -> dt.datetime:
@@ -96,7 +101,7 @@ class Certificates:
             constraints = certificate.extensions.get_extension_for_class(x509.NameConstraints).value
         except x509.ExtensionNotFound:
             return False
-        return x509.DNSName(PERMITTED_DOMAIN) in (constraints.permitted_subtrees or [])
+        return set(constraints.permitted_subtrees or []) == set(_permitted()) and not constraints.excluded_subtrees
 
     def _create(self) -> tuple[x509.Certificate, ec.EllipticCurvePrivateKey]:
         key = ec.generate_private_key(ec.SECP256R1())
@@ -107,11 +112,7 @@ class Certificates:
             ]
         )
         now = _now()
-        constraints = x509.NameConstraints(
-            permitted_subtrees=[x509.IPAddress(ipaddress.ip_network(n)) for n in PERMITTED_NETWORKS]
-            + [x509.DNSName(PERMITTED_DOMAIN)],
-            excluded_subtrees=None,
-        )
+        constraints = x509.NameConstraints(permitted_subtrees=_permitted(), excluded_subtrees=None)
         certificate = (
             x509.CertificateBuilder()
             .subject_name(name)
@@ -140,9 +141,11 @@ class Certificates:
         return certificate, key
 
     def server_certificate(
-        self, address: str, names: tuple[str, ...] = ()
+        self, addresses: str | tuple[str, ...], names: tuple[str, ...] = ()
     ) -> tuple[x509.Certificate, ec.EllipticCurvePrivateKey]:
-        """A certificate for NOVA at this address and these .local names, signed by the authority."""
+        """A certificate for NOVA at these addresses and .local names, signed by the authority."""
+        if isinstance(addresses, str):
+            addresses = (addresses,)
         authority, authority_key = self.authority()
         key = ec.generate_private_key(ec.SECP256R1())
         now = _now()
@@ -157,7 +160,7 @@ class Certificates:
             .not_valid_after(min(now + dt.timedelta(days=SERVER_DAYS), authority.not_valid_after_utc))
             .add_extension(
                 x509.SubjectAlternativeName(
-                    [x509.IPAddress(ipaddress.ip_address(address))] + [x509.DNSName(name) for name in names]
+                    [x509.IPAddress(ipaddress.ip_address(a)) for a in addresses] + [x509.DNSName(n) for n in names]
                 ),
                 critical=False,
             )
@@ -179,9 +182,9 @@ class Certificates:
         )
         return certificate, key
 
-    def server_context(self, address: str, names: tuple[str, ...] = ()) -> ssl.SSLContext:
-        """A TLS context for the phone listener at this address and names."""
-        certificate, key = self.server_certificate(address, names)
+    def server_context(self, addresses: str | tuple[str, ...], names: tuple[str, ...] = ()) -> ssl.SSLContext:
+        """A TLS context for the phone listeners at these addresses and names."""
+        certificate, key = self.server_certificate(addresses, names)
         # Python's ssl only loads keys from files, so the key goes through one, encrypted with a
         # password that lives only in memory, and the folder is gone before this returns.
         password = secrets.token_bytes(32)

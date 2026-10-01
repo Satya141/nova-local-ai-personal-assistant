@@ -105,6 +105,40 @@ export function PairingCard({
   );
 }
 
+/**
+ * Using NOVA away from home: through Tailscale, which the user installs and signs in to on the
+ * PC and the phone. NOVA notices it by itself; until then, this says what to do.
+ */
+export function AwayFromHome({ remoteUrl }: { remoteUrl: string | null }) {
+  return (
+    <div className="flex items-start gap-2.5 rounded-lg px-1 py-1 pl-9">
+      <span
+        className={`mt-1.5 size-2 flex-none rounded-full ${remoteUrl ? "bg-ok" : "bg-line"}`}
+        aria-hidden="true"
+      />
+      <div className="flex min-w-0 flex-1 flex-col">
+        <span className="text-[13px]">Away from home</span>
+        {remoteUrl ? (
+          <span className="text-[11.500px] leading-snug text-text-muted">
+            On, through Tailscale at{" "}
+            <span className="selectable font-medium text-text">{remoteUrl.replace("https://", "")}</span>. Phones
+            paired here reach NOVA from anywhere, on any Wi-Fi or mobile data, while this PC is on.
+          </span>
+        ) : (
+          <span className="text-[11.500px] leading-snug text-text-muted">
+            To use NOVA from anywhere, install{" "}
+            <a href="https://tailscale.com/download" className="font-medium text-accent underline-offset-2 hover:underline">
+              Tailscale
+            </a>{" "}
+            on this PC and your phone and sign in to the same account. NOVA notices it by itself; then pair the phone
+            again once.
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
 const BUTTON =
   "flex-none rounded px-1.5 py-0.5 text-[12px] text-text-muted hover:bg-surface-raised hover:text-text focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-50";
 
@@ -216,6 +250,8 @@ export function PhoneAccessSection() {
           {status.enabled ? "Turn off" : "Turn on"}
         </button>
       </div>
+
+      {status.enabled && <AwayFromHome remoteUrl={status.remote_url} />}
 
       {pairing && secondsLeft > 0 && (
         <PairingCard

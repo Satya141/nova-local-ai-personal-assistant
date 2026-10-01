@@ -8,8 +8,8 @@ listener. The page checks whether the phone already trusts NOVA and, if so, goes
 from __future__ import annotations
 
 import html
-import ipaddress
 from collections.abc import Callable
+from typing import Any
 
 from starlette.applications import Starlette
 from starlette.requests import Request
@@ -110,15 +110,13 @@ check(false);
 """
 
 
-def _from_home_network(request: Request) -> bool:
-    try:
-        return request.client is not None and ipaddress.ip_address(request.client.host).is_private
-    except ValueError:
-        return False
-
-
-def setup_app(app_urls: Callable[[], list[str]], authority: Callable[[], tuple[str, str, bytes]]) -> Starlette:
-    """`app_urls` are the phone app's HTTPS origins, best first; `authority` gives (name, fingerprint, DER)."""
+def setup_app(
+    app_urls: Callable[[], list[str]],
+    authority: Callable[[], tuple[str, str, bytes]],
+    allowed: Callable[[Any, Any], bool],
+) -> Starlette:
+    """`app_urls` are the phone app's HTTPS origins, best first; `authority` gives (name,
+    fingerprint, DER); `allowed(server, client)` says whether a sender may use this listener."""
 
     def headers(request: Request) -> dict[str, str]:
         return {
@@ -132,8 +130,8 @@ def setup_app(app_urls: Callable[[], list[str]], authority: Callable[[], tuple[s
         }
 
     async def page(request: Request) -> Response:
-        if not _from_home_network(request):
-            return PlainTextResponse("Phone access is for the home network only", 403)
+        if not allowed(request.scope.get("server"), request.scope.get("client")):
+            return PlainTextResponse("Phone access is for your own network and devices only", 403)
         urls = app_urls()
         if not urls:
             return PlainTextResponse("Phone access is off", 503)
@@ -147,13 +145,13 @@ def setup_app(app_urls: Callable[[], list[str]], authority: Callable[[], tuple[s
         return Response(body, media_type="text/html; charset=utf-8", headers=headers(request))
 
     async def script(request: Request) -> Response:
-        if not _from_home_network(request):
-            return PlainTextResponse("Phone access is for the home network only", 403)
+        if not allowed(request.scope.get("server"), request.scope.get("client")):
+            return PlainTextResponse("Phone access is for your own network and devices only", 403)
         return Response(_SCRIPT, media_type="text/javascript; charset=utf-8", headers=headers(request))
 
     async def certificate(request: Request) -> Response:
-        if not _from_home_network(request):
-            return PlainTextResponse("Phone access is for the home network only", 403)
+        if not allowed(request.scope.get("server"), request.scope.get("client")):
+            return PlainTextResponse("Phone access is for your own network and devices only", 403)
         # As a plain download: Chrome hands the CA certificate type to Android's installer, which
         # since Android 11 refuses it outright instead of saving the file for Settings.
         return Response(

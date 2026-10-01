@@ -5,12 +5,14 @@ The PC's address changes from network to network, so the phone app lives at a na
 on the network it is listening on, because Windows does not reliably answer for its own name.
 Android 12 and later look up `.local` names this way.
 
-It also reads how Windows classifies the network: on a "Public" network the firewall turns the
-phone away, and only the user can decide to mark a network Private.
+It also reads how Windows classifies the network (on a "Public" network the firewall turns the
+phone away, and only the user can decide to mark a network Private), and finds Tailscale, which
+lets the phone reach NOVA from anywhere.
 """
 
 from __future__ import annotations
 
+import ipaddress
 import json
 import logging
 import re
@@ -161,23 +163,28 @@ class Responder:
         self._socket = self._thread = None
 
 
+# Tailscale gives each device an address here (the "shared address space" of RFC 6598), the
+# same wherever the device is. Other VPNs use it too, so the interface must also be Tailscale's.
+OVERLAY = ipaddress.ip_network("100.64.0.0/10")
+
 # A fixed script: nothing from the user or the model is ever put into it.
-_PROFILES = (
+_INTERFACES = (
     "Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue | ForEach-Object { "
     "$p = Get-NetConnectionProfile -InterfaceIndex $_.InterfaceIndex -ErrorAction SilentlyContinue; "
-    "if ($p) { [pscustomobject]@{ address = $_.IPAddress; name = $p.Name; category = [string]$p.NetworkCategory } } "
+    "[pscustomobject]@{ address = $_.IPAddress; alias = $_.InterfaceAlias; "
+    "name = [string]$p.Name; category = [string]$p.NetworkCategory } "
     "} | ConvertTo-Json -Compress"
 )
 
 
-def network_profile(address: str) -> dict[str, str] | None:
-    """{"name", "category"} of the network the PC reaches through `address`, as Windows sees it.
-    Category is "Public", "Private" or "DomainAuthenticated"."""
+def interfaces() -> list[dict[str, str]]:
+    """The PC's IPv4 addresses, each with its interface and how Windows classifies its network
+    ("Public", "Private" or "DomainAuthenticated")."""
     if sys.platform != "win32":
-        return None
+        return []
     try:
         result = subprocess.run(
-            ["powershell", "-NoProfile", "-NonInteractive", "-Command", _PROFILES],
+            ["powershell", "-NoProfile", "-NonInteractive", "-Command", _INTERFACES],
             capture_output=True,
             text=True,
             timeout=15,
@@ -185,8 +192,30 @@ def network_profile(address: str) -> dict[str, str] | None:
         )
         rows = json.loads(result.stdout or "null")
     except (OSError, subprocess.TimeoutExpired, ValueError):
-        return None
-    for row in rows if isinstance(rows, list) else [rows] if rows else []:
-        if isinstance(row, dict) and row.get("address") == address:
-            return {"name": str(row.get("name") or ""), "category": str(row.get("category") or "")}
+        return []
+    rows = rows if isinstance(rows, list) else [rows] if rows else []
+    return [
+        {key: str(row.get(key) or "") for key in ("address", "alias", "name", "category")}
+        for row in rows
+        if isinstance(row, dict)
+    ]
+
+
+def network_profile(address: str, rows: list[dict[str, str]]) -> dict[str, str] | None:
+    """{"name", "category"} of the network the PC reaches through `address`."""
+    for row in rows:
+        if row["address"] == address and row["category"]:
+            return {"name": row["name"], "category": row["category"]}
+    return None
+
+
+def tailscale_address(rows: list[dict[str, str]]) -> str | None:
+    """The PC's Tailscale address, if Tailscale is installed and connected."""
+    for row in rows:
+        try:
+            ip = ipaddress.ip_address(row["address"])
+        except ValueError:
+            continue
+        if ip in OVERLAY and "tailscale" in row["alias"].lower():
+            return row["address"]
     return None

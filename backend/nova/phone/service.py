@@ -1,9 +1,10 @@
-"""Phone access: NOVA's API and phone app, offered on the home network, only while switched on.
+"""Phone access: NOVA's API and phone app, offered to paired phones, only while switched on.
 
 The desktop keeps its own loopback listener and launch token. Phones get listeners on the PC's
-home-network address: a plain-HTTP setup page that hands out NOVA's certificate, and the app
-over HTTPS, where requests must come from a private address and carry the key of a paired
-phone. It is off until the user turns it on, and remembered across restarts.
+local-network address and, when the PC runs Tailscale, its Tailscale address: a plain-HTTP
+setup page that hands out NOVA's certificate, and the app over HTTPS, where requests must come
+from the matching kind of address and carry the key of a paired phone. It is off until the
+user turns it on, and remembered across restarts.
 """
 
 from __future__ import annotations
@@ -22,7 +23,7 @@ from cryptography.x509.oid import NameOID
 
 from nova.phone.certs import Certificates
 from nova.phone.devices import DeviceStore, PairingCode
-from nova.phone.discovery import Responder, network_profile, nova_name
+from nova.phone.discovery import OVERLAY, Responder, interfaces, network_profile, nova_name, tailscale_address
 from nova.phone.setup import setup_app
 from nova.settings import SettingsStore
 
@@ -107,16 +108,26 @@ class _Listener:
 
 
 
+
 WATCH_SECONDS = 5
-# How often (in watch rounds) to re-read whether Windows calls the network Public or Private.
+# How often (in watch rounds) to re-read the PC's interfaces: whether Windows calls the network
+# Public or Private, and whether Tailscale has come or gone.
 PROFILE_EVERY = 6
 OFFLINE = "Not connected to a network. Phone access continues by itself when the PC joins one."
 
 
+def _client_ip(client: Any) -> ipaddress.IPv4Address | ipaddress.IPv6Address | None:
+    try:
+        return ipaddress.ip_address(client[0]) if client else None
+    except ValueError:
+        return None
+
+
 class PhoneAccess:
-    """Listeners on the PC's current network: a plain-HTTP setup page that hands out NOVA's
-    certificate, and the phone app and API over HTTPS. While switched on, NOVA follows the PC
-    from network to network, and answers for its .local name on each."""
+    """Where phones reach NOVA, while switched on: the PC's current home network and, if the PC
+    runs Tailscale, its Tailscale address, which works from anywhere. On each there is a
+    plain-HTTP setup page that hands out NOVA's certificate, and the phone app and API over
+    HTTPS. NOVA follows the PC from network to network and answers for its .local name."""
 
     def __init__(
         self,
@@ -141,7 +152,8 @@ class PhoneAccess:
         self._listeners: list[_Listener] = []
         self._responder: Responder | None = None
         self._watcher: asyncio.Task | None = None
-        self.address: tuple[str, int] | None = None
+        self.home: str | None = None  # the PC's address on the local network
+        self.remote: str | None = None  # its Tailscale address
         self.network: dict[str, str] | None = None
         self.error: str | None = None
         # Called when something the PC's panel shows changes on its own (the network, say).
@@ -156,23 +168,46 @@ class PhoneAccess:
         return bool(self._listeners) and all(listener.running for listener in self._listeners)
 
     @property
+    def address(self) -> tuple[str, int] | None:
+        """The phone app's listener on the local network."""
+        return (self.home, self._secure_port) if self.home and self.running else None
+
+    @property
     def url(self) -> str | None:
         """The setup page: what the phone opens first, by QR code or by typing it."""
-        return f"http://{self.address[0]}:{self._port}" if self.address and self.running else None
+        host = self.home or self.remote
+        return f"http://{host}:{self._port}" if host and self.running else None
 
     @property
     def app_url(self) -> str | None:
         """The phone app at this network's address, over HTTPS."""
-        return f"https://{self.address[0]}:{self.address[1]}" if self.address and self.running else None
+        return f"https://{self.home}:{self._secure_port}" if self.home and self.running else None
 
     @property
     def name_url(self) -> str | None:
         """The phone app at NOVA's .local name: the same on every network, so pairing carries over."""
         return f"https://{self.name}:{self._secure_port}" if self._responder is not None and self.running else None
 
+    @property
+    def remote_url(self) -> str | None:
+        """The phone app at the PC's Tailscale address: works from anywhere, home included."""
+        return f"https://{self.remote}:{self._secure_port}" if self.remote and self.running else None
+
     def serves(self, server: tuple[str, int] | None) -> bool:
-        """Did this request arrive on the phone app's (HTTPS) listener?"""
-        return self.running and server is not None and tuple(server) == self.address
+        """Did this request arrive on one of the phone app's (HTTPS) listeners?"""
+        if not self.running or server is None:
+            return False
+        host, port = tuple(server)[:2]
+        return port == self._secure_port and host in (self.home, self.remote)
+
+    def client_allowed(self, server: tuple[str, int] | None, client: Any) -> bool:
+        """On the local network, senders must have private addresses; on Tailscale, Tailscale ones."""
+        ip = _client_ip(client)
+        if ip is None or server is None:
+            return False
+        if self.remote is not None and tuple(server)[0] == self.remote:
+            return ip in OVERLAY
+        return ip.is_private
 
     def _authority(self) -> tuple[str, str, bytes]:
         certificate, _ = self.certificates.authority()
@@ -188,6 +223,7 @@ class PhoneAccess:
             "url": self.url,
             "app_url": self.app_url,
             "name_url": self.name_url,
+            "remote_url": self.remote_url,
             "network": self.network,
             "certificate": {"name": name, "fingerprint": fingerprint[:11]} if running else None,
             "error": self.error,
@@ -199,7 +235,9 @@ class PhoneAccess:
         return f"{self.url}/#{code}" if self.url else None
 
     def _app_urls(self) -> list[str]:
-        return [url for url in (self.name_url, self.app_url) if url]
+        # Best first: Tailscale works everywhere; the .local name on any shared Wi-Fi; the
+        # address only on this network.
+        return [url for url in (self.remote_url, self.name_url, self.app_url) if url]
 
     async def set_enabled(self, on: bool) -> None:
         self._settings.set_bool(SETTING, on)
@@ -208,77 +246,92 @@ class PhoneAccess:
         else:
             await self.stop()
 
+    async def _where(self) -> tuple[str | None, str | None, list[dict[str, str]]]:
+        """(local address, Tailscale address, interfaces) as things stand."""
+        if self._host_override is not None:
+            return self._host_override, None, []
+        rows = await asyncio.to_thread(interfaces)
+        home = await asyncio.to_thread(home_network_address)
+        return home, tailscale_address(rows), rows
+
     async def start(self) -> None:
         if self._watcher is not None or self.running:
             return
         self.error = None
-        host = self._host_override or await asyncio.to_thread(home_network_address)
-        if host is None:
+        home, remote, rows = await self._where()
+        if home is None and remote is None:
             self.error = OFFLINE
         else:
-            await self._open(host)
+            await self._open(home, remote, rows)
         if self._host_override is None:
             self._watcher = asyncio.create_task(self._watch(), name="phone-network-watch")
 
     async def _watch(self) -> None:
-        """Follow the PC to whichever network it is on: home, office, a friend's Wi-Fi."""
+        """Follow the PC to whichever network it is on, and notice Tailscale coming and going."""
         rounds = 0
         while True:
             await asyncio.sleep(WATCH_SECONDS)
             rounds += 1
             try:
-                host = await asyncio.to_thread(home_network_address)
-                current = self.address[0] if self.address else None
-                if host != current or (host is not None and not self.running):
-                    log.info("Phone access: network changed (%s -> %s)", current, host)
+                home = await asyncio.to_thread(home_network_address)
+                remote, rows = self.remote, None
+                if home != self.home or rounds % PROFILE_EVERY == 0:
+                    rows = await asyncio.to_thread(interfaces)
+                    remote = tailscale_address(rows)
+                moved = (home, remote) != (self.home, self.remote)
+                if moved or ((home or remote) and not self.running):
+                    log.info("Phone access: network changed (%s, %s -> %s, %s)", self.home, self.remote, home, remote)
                     await self._close()
-                    if host is None:
+                    if home is None and remote is None:
                         self.error = OFFLINE
                     else:
-                        await self._open(host)
+                        await self._open(home, remote, rows if rows is not None else await asyncio.to_thread(interfaces))
                     self.on_change()
-                elif host is not None and rounds % PROFILE_EVERY == 0:
-                    profile = await asyncio.to_thread(network_profile, host)
+                elif rows is not None and home is not None:
+                    profile = network_profile(home, rows)
                     if profile != self.network:
                         self.network = profile
                         self.on_change()
             except Exception:
                 log.exception("Phone access: following the network failed")
 
-    async def _open(self, host: str) -> None:
+    async def _open(self, home: str | None, remote: str | None, rows: list[dict[str, str]]) -> None:
         self.error = None
-        announce = not ipaddress.ip_address(host).is_loopback
+        hosts = [host for host in (home, remote) if host]
+        announce = home is not None and not ipaddress.ip_address(home).is_loopback
         names = (self.name,) if announce else ()
         try:
-            context = await asyncio.to_thread(self.certificates.server_context, host, names)
+            context = await asyncio.to_thread(self.certificates.server_context, tuple(hosts), names)
         except Exception as exc:
             log.exception("Could not make the phone certificate")
             self.error = f"Could not set up encryption for phone access: {exc}"
             return
-        sockets: list[socket.socket] = []
-        for port in (self._port, self._secure_port):
-            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            try:
-                sock.bind((host, port))
-            except OSError as exc:
-                sock.close()
-                for bound in sockets:
-                    bound.close()
-                self.error = f"Could not listen on {host}:{port} ({exc.strerror or exc})."
-                return
-            sock.listen(64)
-            sock.setblocking(False)
-            sockets.append(sock)
-        self.address = (host, self._secure_port)
-        setup = setup_app(self._app_urls, self._authority)
-        self._listeners = [_Listener(setup, "phone-setup"), _Listener(self._app, "phone-app", context)]
-        for listener, sock in zip(self._listeners, sockets, strict=True):
+        sockets: list[tuple[socket.socket, bool]] = []
+        for host in hosts:
+            for port, secure in ((self._port, False), (self._secure_port, True)):
+                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                try:
+                    sock.bind((host, port))
+                except OSError as exc:
+                    sock.close()
+                    for bound, _ in sockets:
+                        bound.close()
+                    self.error = f"Could not listen on {host}:{port} ({exc.strerror or exc})."
+                    return
+                sock.listen(64)
+                sock.setblocking(False)
+                sockets.append((sock, secure))
+        self.home, self.remote = home, remote
+        setup = setup_app(self._app_urls, self._authority, self.client_allowed)
+        for sock, secure in sockets:
+            listener = _Listener(self._app, "phone-app", context) if secure else _Listener(setup, "phone-setup")
             listener.start(sock, self._failed)
+            self._listeners.append(listener)
         if announce:
-            responder = Responder(self.name, host)
+            responder = Responder(self.name, home)
             self._responder = responder if await asyncio.to_thread(responder.start) else None
-            self.network = await asyncio.to_thread(network_profile, host)
-        log.info("Phone access on http://%s:%s (setup) and https://%s:%s", host, self._port, host, self._secure_port)
+            self.network = network_profile(home, rows)
+        log.info("Phone access on %s", ", ".join(f"https://{host}:{self._secure_port}" for host in hosts))
 
     def _failed(self, message: str) -> None:
         self.error = message
@@ -291,7 +344,7 @@ class PhoneAccess:
         for listener in self._listeners:
             await listener.stop()
         self._listeners = []
-        self.address = None
+        self.home = self.remote = None
         self.network = None
 
     async def stop(self) -> None:

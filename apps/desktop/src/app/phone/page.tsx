@@ -132,7 +132,7 @@ export default function PhoneApp() {
             : {
                 kind: "offline",
                 message:
-                  "Can't find your PC. Connect both to the same Wi-Fi, with NOVA running and phone access on. This page reconnects by itself.",
+                  "Can't find your PC. It needs to be on with NOVA running, and this phone on the same Wi-Fi or on Tailscale. This page reconnects by itself.",
               },
         ),
       );
