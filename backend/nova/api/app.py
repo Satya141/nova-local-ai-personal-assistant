@@ -10,11 +10,13 @@ from __future__ import annotations
 import asyncio
 import json
 import mimetypes
+import re
 import secrets
 import webbrowser
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import date
+from pathlib import Path
 
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
@@ -36,6 +38,7 @@ from nova.memory.extractor import MemoryExtractor
 from nova.permissions import PermissionGate
 from nova.permissions.audit import ActionLog
 from nova.phone.devices import DeviceStore
+from nova.phone.push import Pusher, PushKeys, PushStore
 from nova.phone.certs import Certificates
 from nova.phone.service import PhoneAccess, qr_svg
 from nova.phone.sync import Sync, SyncRequest
@@ -91,6 +94,18 @@ class PhoneAccessRequest(BaseModel):
     enabled: bool
 
 
+class PushKeysBody(BaseModel):
+    p256dh: str = Field(max_length=200)
+    auth: str = Field(max_length=100)
+
+
+class PushSubscriptionRequest(BaseModel):
+    """A browser's PushSubscription, as its toJSON() gives it."""
+
+    endpoint: str = Field(max_length=2000)
+    keys: PushKeysBody
+
+
 class PairRequest(BaseModel):
     code: str = Field(min_length=6, max_length=6, pattern=r"^\d{6}$")
     name: str = Field(default="Phone", max_length=60)
@@ -101,7 +116,8 @@ class PairRequest(BaseModel):
 _DESKTOP_ONLY = ("/api/connections", "/api/voice", "/api/phone", "/api/setup")
 # Pages served to phones: the app's own scripts and styles, and nowhere else to talk to.
 _PHONE_CSP = (
-    "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; "
+    # 'wasm-unsafe-eval': the pocket model runs as WebAssembly and WebGPU in the phone's browser.
+    "default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; "
     "img-src 'self' data:; font-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'"
 )
 
@@ -221,7 +237,7 @@ def create_app(
         app.state.timeline = timeline
         app.state.sync = Sync(db, memory, reminders, actions)
         user_settings = SettingsStore(db)
-        voice = VoiceService(bus, user_settings, settings.models_dir) if settings.voice else None
+        voice = VoiceService(bus, user_settings, settings.models_dir, whisper=settings.whisper_models()) if settings.voice else None
         app.state.voice = voice
         phone = PhoneAccess(
             app,
@@ -234,6 +250,10 @@ def create_app(
         )
         phone.on_change = lambda: bus.publish({"type": "phones", "status": phone.status()})
         app.state.phone = phone
+        # Reminders ring on a locked phone through its browser's push service (nova/phone/push.py).
+        pusher = Pusher(PushStore(db), PushKeys(settings.data_dir / "phone"), lambda: phone.enabled)
+        app.state.pusher = pusher
+        pusher.start(bus)
         scheduler.start()
         if voice:
             await voice.start()
@@ -243,6 +263,7 @@ def create_app(
             yield
         finally:
             await phone.stop()
+            await pusher.stop()
             if voice:
                 await voice.close()
             if browser:
@@ -313,6 +334,8 @@ def create_app(
             "detail": model.detail,
             # Whether NOVA can look at the screen; the UI shows the screen button only then.
             "vision_ready": bool(vision_status and vision_status.ready),
+            # Whether the PC can hear a recording (the phone app's mic button).
+            "hearing_ready": bool(request.app.state.voice and request.app.state.voice.availability()[0]),
         }
 
     @app.get("/api/setup")
@@ -354,7 +377,9 @@ def create_app(
 
         async def events() -> AsyncIterator[str]:
             yield json.dumps({"type": "conversation", "id": conversation_id}) + "\n"
-            async for event in agent.run_turn(conversation_id, body.message.strip(), voice=voice, screen=screen):
+            async for event in agent.run_turn(
+                conversation_id, body.message.strip(), voice=voice, screen=screen, remote=from_phone
+            ):
                 yield json.dumps(event) + "\n"
 
         return StreamingResponse(events(), media_type="application/x-ndjson", headers=_NDJSON_HEADERS)
@@ -426,6 +451,25 @@ def create_app(
         if voice is None:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "Voice is turned off (NOVA_VOICE=false)")
         return voice
+
+    _CLIP_BYTES = 3_000_000  # about three minutes of Opus; a message is seconds
+
+    @app.post("/api/transcribe")
+    async def transcribe(request: Request) -> dict:
+        """A recording from the phone app's mic, as text. Heard by the PC's own Whisper, in memory."""
+        voice = voice_service(request)
+        ready, problem = voice.availability()
+        if not ready:
+            raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, problem or "Voice is not available on the PC")
+        data = bytearray()
+        async for chunk in request.stream():
+            data += chunk
+            if len(data) > _CLIP_BYTES:
+                raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "That recording is too long")
+        try:
+            return {"text": await voice.transcribe_clip(bytes(data))}
+        except ValueError as exc:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
 
     @app.get("/api/voice")
     async def voice_status(request: Request) -> dict:
@@ -562,6 +606,46 @@ def create_app(
         phones_changed(request)
         return {"token": token, "device": device.to_dict()}
 
+    # --- notifications on a locked phone ---------------------------------------------------
+
+    def this_phone(request: Request):
+        if request.state.device is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Notifications are set up from the phone app")
+        return request.state.device
+
+    @app.get("/api/push")
+    async def push_status(request: Request) -> dict:
+        """The PC's public key for the phone's browser, and whether this phone is signed up."""
+        pusher: Pusher = request.app.state.pusher
+        device = this_phone(request)
+        return {"public_key": pusher.keys.public_key(), "subscribed": pusher.store.get(device.id) is not None}
+
+    @app.post("/api/push")
+    async def push_subscribe(body: PushSubscriptionRequest, request: Request) -> dict:
+        device = this_phone(request)
+        try:
+            request.app.state.pusher.store.save(device.id, body.endpoint, body.keys.p256dh, body.keys.auth)
+        except ValueError as exc:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
+        return {"subscribed": True}
+
+    @app.delete("/api/push")
+    async def push_unsubscribe(request: Request) -> dict:
+        request.app.state.pusher.store.remove(this_phone(request).id)
+        return {"subscribed": False}
+
+    @app.post("/api/push/test")
+    async def push_test(request: Request) -> dict:
+        """A sample notification to this phone, so the user hears what a reminder sounds like."""
+        device = this_phone(request)
+        message = json.dumps({"type": "test", "text": "This is how your reminders will ring."}).encode()
+        pusher: Pusher = request.app.state.pusher
+        if pusher.store.get(device.id) is None:
+            raise HTTPException(status.HTTP_409_CONFLICT, "Turn on notifications on this phone first")
+        if not await pusher.send(message, device.id):
+            raise HTTPException(status.HTTP_502_BAD_GATEWAY, pusher.last_problem or "The notification was not sent.")
+        return {"sent": True}
+
     @app.get("/api/timeline")
     async def timeline_days(request: Request, last: date | None = None, days: int = 7) -> dict:
         """Days of the life timeline, newest first, ending with last (default: today)."""
@@ -600,6 +684,45 @@ def create_app(
         if body.ops:
             request.app.state.scheduler.poke()
         return {"results": results, "snapshot": request.app.state.sync.snapshot()}
+
+    # --- the phone's pocket model (served from the PC; the phone never fetches it from the internet)
+
+    pocket_dir = settings.models_dir / "pocket"
+    safe_name = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,120}$")
+
+    # Each model and its compiled program; the small one is for graphics chips without 16-bit maths.
+    pocket_models = {settings.pocket_model: settings.pocket_model_lib, settings.pocket_model_small: settings.pocket_model_small_lib}
+
+    def pocket_files(model: str) -> list[Path]:
+        folder = pocket_dir / model
+        return [*folder.glob("*"), pocket_dir / "libs" / pocket_models[model]] if folder.is_dir() else []
+
+    @app.get("/api/pocket")
+    async def pocket_info(f16: bool = True) -> dict:
+        """Which pocket model this PC offers a phone (`f16`: its graphics chip has 16-bit maths)."""
+        model = settings.pocket_model if f16 else settings.pocket_model_small
+        files = pocket_files(model)
+        here = bool(files) and all(f.is_file() for f in files) and (pocket_dir / model / "mlc-chat-config.json").is_file()
+        return {
+            "model": model,
+            "lib": f"/pocket/libs/{pocket_models[model]}",
+            "available": here,
+            "size": sum(f.stat().st_size for f in files if f.is_file()) if here else 0,
+        }
+
+    @app.get("/pocket/{model}/resolve/main/{name}", include_in_schema=False)
+    async def pocket_model_file(model: str, name: str) -> Response:
+        # web-llm asks for <model>/resolve/main/<file>, as on Hugging Face.
+        if model not in pocket_models or not safe_name.match(name) or not (path := pocket_dir / model / name).is_file():
+            raise HTTPException(status.HTTP_404_NOT_FOUND)
+        return FileResponse(path, headers={"Cache-Control": "public, max-age=31536000, immutable"})
+
+    @app.get("/pocket/libs/{name}", include_in_schema=False)
+    async def pocket_model_lib(name: str) -> Response:
+        path = pocket_dir / "libs" / name
+        if name not in pocket_models.values() or not path.is_file():
+            raise HTTPException(status.HTTP_404_NOT_FOUND)
+        return FileResponse(path, media_type="application/wasm", headers={"Cache-Control": "public, max-age=31536000, immutable"})
 
     # --- the phone app's files ---------------------------------------------------------
 

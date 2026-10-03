@@ -16,6 +16,8 @@ export type Health = {
   detail: string | null;
   /** Whether NOVA can look at the screen. */
   vision_ready: boolean;
+  /** Whether the PC can hear a recording (the phone app's mic button). */
+  hearing_ready?: boolean;
 };
 
 export type Risk = "low" | "medium" | "high";
@@ -139,7 +141,7 @@ async function request(path: string, init: RequestInit = {}): Promise<Response> 
   const { url, token } = await session();
   const response = await fetch(url + path, {
     ...init,
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    headers: { "Content-Type": "application/json", ...init.headers, Authorization: `Bearer ${token}` },
   });
   // The PC removed this phone: drop the key, so the app asks to pair again.
   if (response.status === 401 && isPhone()) {
@@ -239,6 +241,14 @@ export async function summariseDay(day: string): Promise<string> {
   return body.summary;
 }
 
+/** Which pocket model the PC offers its phones (src/lib/pocket-model.ts). */
+/** The pocket model the PC offers a phone; `f16` false asks for the one without 16-bit maths. */
+export async function pocketModelInfo(f16 = true): Promise<{ model: string; lib: string; available: boolean; size: number }> {
+  const response = await request(f16 ? "/api/pocket" : "/api/pocket?f16=false");
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  return response.json();
+}
+
 // --- sync: the phone's copy, and changes it made while the PC was away -----------------------
 // Mirrors the models in backend/nova/phone/sync.py.
 
@@ -258,6 +268,46 @@ export async function syncPhone(ops: SyncOp[]): Promise<{ results: SyncResult[];
   const body = await response.json().catch(() => null);
   if (!response.ok) throw new Error(body?.detail ? JSON.stringify(body.detail) : `HTTP ${response.status}`);
   return body;
+}
+
+// --- notifications on a locked phone (backend/nova/phone/push.py) ---------------------------
+
+export type PushInfo = { public_key: string; subscribed: boolean };
+
+export async function pushInfo(): Promise<PushInfo> {
+  const response = await request("/api/push");
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  return response.json();
+}
+
+/** Tell the PC where this phone's browser receives notifications (a PushSubscription's JSON). */
+export async function savePushSubscription(subscription: PushSubscriptionJSON): Promise<void> {
+  const response = await request("/api/push", { method: "POST", body: JSON.stringify(subscription) });
+  const body = await response.json().catch(() => null);
+  if (!response.ok) throw new Error(body?.detail ?? `HTTP ${response.status}`);
+}
+
+export async function removePushSubscription(): Promise<void> {
+  await request("/api/push", { method: "DELETE" });
+}
+
+/** Ask the PC to send this phone a sample notification. */
+export async function testPush(): Promise<void> {
+  const response = await request("/api/push/test", { method: "POST" });
+  const body = await response.json().catch(() => null);
+  if (!response.ok) throw new Error(body?.detail ?? `HTTP ${response.status}`);
+}
+
+/** What was said in a recording from the phone's mic, heard by the PC's own Whisper. */
+export async function transcribeClip(clip: Blob): Promise<string> {
+  const response = await request("/api/transcribe", {
+    method: "POST",
+    body: clip,
+    headers: { "Content-Type": clip.type || "application/octet-stream" },
+  });
+  const body = await response.json().catch(() => null);
+  if (!response.ok) throw new Error(body?.detail ?? `HTTP ${response.status}`);
+  return body.text;
 }
 
 /** Parse a newline-delimited JSON body. A network chunk can end mid-line. */

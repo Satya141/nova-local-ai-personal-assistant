@@ -66,3 +66,48 @@ async function cacheFirst(request) {
   if (response.ok) await cache.put(request, response.clone());
   return response;
 }
+
+// Reminders on a locked phone: the PC sends each one through the browser's push service, sealed
+// for this phone (backend/nova/phone/push.py). While NOVA is on screen it shows the reminder
+// card itself, so only a test rings then.
+self.addEventListener("push", (event) => {
+  let message = {};
+  try {
+    message = event.data ? event.data.json() : {};
+  } catch {
+    // Not one of NOVA's messages: show nothing more than a plain notice below.
+  }
+  event.waitUntil(notify(message));
+});
+
+async function notify(message) {
+  if (message.type === "reminder") {
+    const windows = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+    if (windows.some((client) => client.visibilityState === "visible" && client.focused)) return;
+  }
+  const isReminder = message.type === "reminder";
+  const title = isReminder ? (message.result ? message.text : "Reminder") : "NOVA";
+  const body = isReminder ? message.result || message.text : message.text || "NOVA has something for you.";
+  await self.registration.showNotification(title, {
+    body,
+    tag: isReminder ? `nova-reminder-${message.id}` : "nova-test",
+    renotify: true,
+    requireInteraction: isReminder,
+    silent: false, // the phone's notification sound (Chrome can't choose another)
+    vibrate: [400, 150, 400, 150, 400],
+    icon: "/phone-icon-256.png",
+    badge: "/phone-icon.png",
+    timestamp: Date.parse(message.fired_at || "") || Date.now(),
+  });
+}
+
+// A tap opens NOVA, where the reminder card waits with Done and Snooze.
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  event.waitUntil(
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((windows) => {
+      const open = windows.find((client) => new URL(client.url).pathname.startsWith("/phone"));
+      return open ? open.focus() : self.clients.openWindow("/phone");
+    }),
+  );
+});

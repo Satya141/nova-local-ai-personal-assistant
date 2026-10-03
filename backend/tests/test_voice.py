@@ -143,7 +143,7 @@ class FakeTranscriber:
     def find_wake(self, audio):
         return self.wakes.pop(0) if self.wakes else None
 
-    def transcribe(self, audio):
+    def transcribe(self, audio, clip=False):
         return self.texts.pop(0) if self.texts else ""
 
 
@@ -304,3 +304,115 @@ async def test_speaking_can_be_interrupted(db, bus, played):
             state = await next_event(queue, "voice_state")
     await voice.close()
     assert state["state"] == "off"
+
+
+# --- the phone app's mic: a recording heard by the PC ---------------------------------------
+
+
+def wav(seconds: float, rate: int = 48000) -> bytes:
+    """A short tone, as a phone's recording might arrive (another sample rate, another container)."""
+    import io
+    import wave
+
+    samples = (np.sin(np.linspace(0, 440 * 2 * np.pi * seconds, int(rate * seconds))) * 8000).astype(np.int16)
+    out = io.BytesIO()
+    with wave.open(out, "wb") as file:
+        file.setnchannels(1)
+        file.setsampwidth(2)
+        file.setframerate(rate)
+        file.writeframes(samples.tobytes())
+    return out.getvalue()
+
+
+class Heard(FakeTranscriber):
+    def __init__(self, wakes, texts):
+        super().__init__(wakes, texts)
+        self.lengths: list[int] = []
+
+    def transcribe(self, audio, clip=False):
+        assert clip, "a phone recording is heard as a clip"
+        self.lengths.append(len(audio))
+        return super().transcribe(audio)
+
+
+async def test_a_recording_from_the_phone_is_heard_on_the_pc(db, bus, played):
+    heard = Heard([None], ["What time is it?"])
+    voice = make_voice(db, bus, heard, played, wake_word=False)
+    assert await voice.transcribe_clip(wav(2.0)) == "What time is it?"
+    assert heard.lengths == [32000], "decoded to 16 kHz mono in memory"
+    assert FakeMic.instances == [], "the PC's own microphone stays shut"
+
+
+async def test_hey_nova_at_the_start_of_a_recording_is_dropped(db, bus, played):
+    heard = Heard([0.5], ["Open Notepad."])
+    voice = make_voice(db, bus, heard, played, wake_word=False)
+    assert await voice.transcribe_clip(wav(2.0)) == "Open Notepad."
+    assert heard.lengths == [24000]
+
+
+async def test_long_recordings_are_cut_and_garbage_is_refused(db, bus, played):
+    heard = Heard([None], ["..."])
+    voice = make_voice(db, bus, heard, played, wake_word=False)
+    await voice.transcribe_clip(wav(31.0, rate=16000))
+    assert heard.lengths == [30 * 16000]
+    with pytest.raises(ValueError):
+        await voice.transcribe_clip(b"not audio at all")
+
+
+def test_the_phone_may_send_recordings_but_not_use_the_pcs_mic():
+    from nova.api.app import _DESKTOP_ONLY
+
+    assert "/api/voice/listen".startswith(_DESKTOP_ONLY)
+    assert not "/api/transcribe".startswith(_DESKTOP_ONLY)
+
+
+def test_the_transcribe_route_hears_a_recording_and_refuses_huge_ones(tmp_path):
+    from conftest import FakeProvider, say
+    from fastapi.testclient import TestClient
+
+    from nova.api import create_app
+    from nova.config import Settings
+
+    class Ears:
+        def availability(self):
+            return True, None
+
+        async def transcribe_clip(self, data):
+            if data == b"junk":
+                raise ValueError("That recording could not be read.")
+            return f"{len(data)} bytes heard"
+
+    settings = Settings(api_token="t", data_dir=tmp_path, embed_model="", voice=False, vision_model="", browser=False)
+    key = {"Authorization": "Bearer t"}
+    with TestClient(create_app(settings, FakeProvider([[say("hi")]]))) as client:
+        assert client.post("/api/transcribe", content=b"x", headers=key).status_code == 404, "voice off"
+        client.app.state.voice = Ears()
+        assert client.get("/api/health", headers=key).json()["hearing_ready"] is True
+        assert client.post("/api/transcribe", content=b"abc", headers=key).json() == {"text": "3 bytes heard"}
+        assert client.post("/api/transcribe", content=b"junk", headers=key).status_code == 400
+        assert client.post("/api/transcribe", content=b"\0" * 3_000_001, headers=key).status_code == 413
+
+
+def test_a_sentence_made_up_from_noise_is_recognised():
+    from nova.voice.stt import repeats
+
+    # Heard on the user's phone from a recording that said nothing of the kind.
+    assert repeats("I am not going to be a doctor, I am not going to be a doctor, I am not going to be a doctor.")
+    assert repeats("Thank you. Thank you. Thank you.")
+    assert not repeats("Remind me at 5. Then call mom.")
+    assert not repeats("What time is it?")
+
+
+def test_the_bigger_speech_model_is_used_when_present_and_base_en_otherwise(tmp_path):
+    from nova.config import Settings
+
+    def put(name):
+        folder = tmp_path / "whisper" / f"models--Systran--faster-whisper-{name}" / "snapshots" / "x"
+        folder.mkdir(parents=True)
+        (folder / "model.bin").write_bytes(b"")
+
+    settings = Settings(api_token="t", data_dir=tmp_path, models_dir=tmp_path)
+    put("base.en")
+    assert settings.whisper_models() == ("tiny.en", "base.en"), "small.en not downloaded yet"
+    put("small.en")
+    assert settings.whisper_models() == ("tiny.en", "small.en")

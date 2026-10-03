@@ -55,6 +55,9 @@ class Tool:
     # The argument holding a web address. After untrusted input, an address that neither the user
     # nor a page NOVA read supplied needs confirming: it could smuggle data out in the URL.
     url_arg: str | None = None
+    # Needs the user sitting at the PC (it looks at their screen). Never offered to, or run for,
+    # a request from a phone: the user is away from the PC, and "your screen" is not the phone's.
+    at_the_pc: bool = False
 
     def schema(self) -> dict[str, Any]:
         raw = self.args_model.model_json_schema()
@@ -112,5 +115,6 @@ class ToolRegistry:
     def names(self) -> list[str]:
         return sorted(self._tools)
 
-    def schemas(self) -> list[dict[str, Any]]:
-        return [tool.schema() for tool in self._tools.values()]
+    def schemas(self, remote: bool = False) -> list[dict[str, Any]]:
+        """The tools offered to the model; `remote` (a request from a phone) leaves out `at_the_pc` ones."""
+        return [tool.schema() for tool in self._tools.values() if not (remote and tool.at_the_pc)]

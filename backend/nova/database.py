@@ -107,6 +107,16 @@ MIGRATIONS: tuple[str, ...] = (
         applied_at TEXT NOT NULL
     );
     """,
+    # 8: where to send a paired phone's notifications, so reminders ring while it is locked.
+    """
+    CREATE TABLE push_subscriptions (
+        device_id  INTEGER PRIMARY KEY REFERENCES devices(id) ON DELETE CASCADE,
+        endpoint   TEXT NOT NULL,
+        p256dh     TEXT NOT NULL,
+        auth       TEXT NOT NULL,
+        created_at TEXT NOT NULL
+    );
+    """,
 )
 
 

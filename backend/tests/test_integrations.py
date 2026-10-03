@@ -306,17 +306,24 @@ async def test_tools_appear_only_while_connected(tmp_path):
     connections = Connections(tmp_path)
     registry = ToolRegistry()
     connections.sync(registry)
-    assert registry.names() == []
+    missing = ["calendar_not_connected", "email_not_connected", "github_not_connected"]
+    assert registry.names() == missing, "only the stand-ins that say how to connect"
     assert "Gmail and Google Calendar and GitHub" in connections.prompt_note()
+    result = await registry.get("email_not_connected").handler(registry.get("email_not_connected").args_model())
+    assert not result.ok and "Ctrl M" in result.content and "not on the screen" in result.content
+    assert registry.get("email_not_connected").read_only
 
     connections.github._vault.save("github", {"token": "t", "login": "satya"})
     connections.sync(registry)
-    assert registry.names() == ["github_activity", "github_comment", "github_new_issue", "github_read", "github_search"]
+    assert registry.names() == [
+        "calendar_not_connected", "email_not_connected",
+        "github_activity", "github_comment", "github_new_issue", "github_read", "github_search",
+    ]
     assert connections.prompt_note().startswith("Not connected: Gmail and Google Calendar.")
 
     connections.github.disconnect()
     connections.sync(registry)
-    assert registry.names() == []
+    assert registry.names() == missing
 
 
 async def test_reading_mail_then_sending_is_blocked(vault):

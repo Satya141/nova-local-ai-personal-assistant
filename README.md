@@ -4,7 +4,7 @@
 
 NOVA is an open-source, local-first AI personal assistant. It runs a language model on your own computer, and it acts: ask it to open an app, find a file or remind you of something and it does that, rather than telling you how.
 
-This repository is at **Phase 10** (part 1): a Windows desktop agent with long-term memory, reminders, voice, screen understanding, web browsing, file organising, scheduled tasks, your Gmail, Google Calendar and GitHub, and a phone app that works on your Wi-Fi or, with Tailscale, from anywhere. Distributed inference and the life timeline are planned and not built yet.
+This repository is at **Phase 10**: all ten phases are built: a Windows desktop agent with long-term memory, reminders, voice, screen understanding, web browsing, file organising, scheduled tasks, your Gmail, Google Calendar and GitHub, and a phone app that works on your Wi-Fi or, with Tailscale, from anywhere. Distributed inference and the life timeline are planned and not built yet.
 
 ![NOVA reading an error from the window behind it](docs/screenshots/screen.png)
 
@@ -70,7 +70,7 @@ After that, the phone finds NOVA by itself on any Wi-Fi you both join (home, off
 
 ### When the PC is off
 
-The phone app keeps a copy of what NOVA remembers and your reminders. When it cannot reach the PC, it opens in pocket mode: read your memories and reminders, add something to remember, set or cancel a reminder. Reminders ring on the phone while the app is open. Everything you change goes to the PC by itself the next time the phone reaches it. Chatting with NOVA still needs the PC (an offline pocket model is next).
+The phone app keeps a copy of what NOVA remembers and your reminders. When it cannot reach the PC, it opens in pocket mode: read your memories and reminders, add something to remember, set or cancel a reminder. Reminders ring on the phone while the app is open. Everything you change goes to the PC by itself the next time the phone reaches it. To chat too, open the phone app's **Memory** view while connected and press **Put Nova on this phone**: it copies a small AI model (about 1 GB) from your PC to the phone, once. Then, with the PC away, Nova answers questions about what it knows, remembers things and sets reminders on the phone; things only the PC can do wait for it. It needs Chrome with WebGPU (Android 12 or newer, a fairly recent phone). The PC gets the model with `backend\.venv\Scripts\python scripts\fetch_pocket_model.py`.
 
 ### From anywhere (Tailscale)
 

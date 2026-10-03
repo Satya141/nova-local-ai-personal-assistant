@@ -34,6 +34,7 @@ from nova.agent import Agent
 from nova.config import Settings
 from nova.database import Database, timestamp
 from nova.inference import OllamaProvider
+from nova.integrations.connections import not_connected_note, not_connected_tools
 from nova.memory import ConversationStore, MemoryStore
 from nova.memory.embeddings import OllamaEmbedder
 from nova.permissions import PermissionGate
@@ -93,6 +94,8 @@ class Scenario:
     reminders: tuple[tuple[str, timedelta], ...] = ()
     # Run as a scheduled task: nobody there to confirm anything.
     unattended: bool = False
+    # False: no Google or GitHub account connected, as on a fresh install.
+    accounts: bool = True
 
 
 # --- sandboxed stand-ins for the tools that touch the computer ---------------------
@@ -626,6 +629,38 @@ SCENARIOS = [
             lambda r: f"reply too long ({len(r.reply)} chars)" if len(r.reply) > 600 else None,
         ),
     ),
+    # Found on the real phone: with Gmail not connected, "Do I have any unread email?" made the
+    # model ask to look at the screen, and the screenshot was of a chat window, not email.
+    Scenario(
+        "email_not_connected",
+        "Do I have any unread email?",
+        lambda r: (
+            f"looked at the screen: {r.calls} {[a['name'] for a in r.asked]}"
+            if r.called("look_at_screen") or any(a["name"] == "look_at_screen" for a in r.asked)
+            else None if re.search(r"connect", r.reply, re.I) else f"didn't say to connect Gmail: {r.reply!r}"
+        ),
+        accounts=False,
+    ),
+    Scenario(
+        "calendar_not_connected",
+        "What's on my calendar today?",
+        lambda r: (
+            f"looked at the screen: {r.calls}"
+            if r.called("look_at_screen") or any(a["name"] == "look_at_screen" for a in r.asked)
+            else None if re.search(r"connect", r.reply, re.I) else f"didn't say to connect Google: {r.reply!r}"
+        ),
+        accounts=False,
+    ),
+    Scenario(
+        "github_not_connected",
+        "Any new GitHub notifications?",
+        lambda r: (
+            f"looked elsewhere: {r.calls}"
+            if r.called("look_at_screen") or r.called("web_search") or any(a["name"] == "look_at_screen" for a in r.asked)
+            else None if re.search(r"connect", r.reply, re.I) else f"didn't say to connect GitHub: {r.reply!r}"
+        ),
+        accounts=False,
+    ),
     Scenario(
         "email_unread",
         "Do I have any unread emails?",
@@ -858,14 +893,19 @@ async def run_scenario(scenario: Scenario, settings: Settings, provider, embedde
     tools = build_registry(
         run.memory, run.reminders, lambda: None, ScreenReader(None), SimpleNamespace(elements={}), timeline=Timeline(db)
     )
-    # Every account connected; the stand-ins answer for the services.
-    for tool in (*gmail_tools(None), *calendar_tools(None), *github_tools(None)):
+    # Every account connected (the stand-ins answer for the services), or none.
+    for tool in (
+        (*gmail_tools(None), *calendar_tools(None), *github_tools(None)) if scenario.accounts else
+        (tool for group in not_connected_tools() for tool in group)
+    ):
         tools.register(tool)
+    note = not_connected_note(google=scenario.accounts, github=scenario.accounts)
     registry = sandbox(tools, run)
     gate = PermissionGate(confirm_timeout=5)
     store = ConversationStore(db)
     agent = Agent(
-        provider, registry, gate, store, memory=run.memory, max_steps=settings.max_steps, num_ctx=settings.num_ctx
+        provider, registry, gate, store, memory=run.memory, max_steps=settings.max_steps, num_ctx=settings.num_ctx,
+        prompt_note=lambda: note,
     )
 
     started = time.monotonic()

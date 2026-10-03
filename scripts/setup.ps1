@@ -37,7 +37,7 @@ if ($embedModel) {
 }
 
 # Voice models live in backend\models, outside AppData, so NOVA finds them however it is started.
-Write-Host '== Voice: Whisper tiny.en and base.en, Piper en_US-ljspeech-high (about 330 MB)'
+Write-Host '== Voice: Whisper tiny.en and small.en, Piper en_US-ljspeech-high (about 650 MB)'
 $models = Join-Path $root 'backend\models'
 $env:HF_HUB_DISABLE_SYMLINKS_WARNING = '1'
 & "$venv\Scripts\python.exe" -c @"
@@ -47,7 +47,7 @@ from piper.download_voices import download_voice
 models = Path(r'$models')
 (models / 'voices').mkdir(parents=True, exist_ok=True)
 download_voice('en_US-ljspeech-high', models / 'voices')
-for name in ('tiny.en', 'base.en'):
+for name in ('tiny.en', 'small.en'):
     WhisperModel(name, device='cpu', compute_type='int8', download_root=str(models / 'whisper'))
 print('voice models ready')
 "@

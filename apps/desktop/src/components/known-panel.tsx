@@ -3,6 +3,8 @@ import { type ReactNode, useCallback, useEffect, useState } from "react";
 import { Character, type CharacterKind } from "@/components/character";
 import { ConnectionsSection } from "@/components/connections";
 import { PhoneAccessSection } from "@/components/phone-access";
+import { PhoneAlertsCard } from "@/components/phone-alerts-card";
+import { PocketModelCard } from "@/components/pocket-model-card";
 import { toolOwner } from "@/components/transcript";
 import {
   type Action,
@@ -144,6 +146,8 @@ export function KnownPanel({ phone = false }: { phone?: boolean }) {
 
   return (
     <div className="flex flex-col gap-3">
+      {phone && <PhoneAlertsCard />}
+      {phone && <PocketModelCard online />}
       <Section title="Reminders and tasks" count={reminders.length}>
         {reminders.length === 0 ? (
           <p className="px-1 text-[12.500px] text-text-muted">Nothing scheduled. Try “Every morning at 8, summarise the tech news”.</p>

@@ -107,3 +107,33 @@ def chime(rate: int = 22050) -> np.ndarray:
         envelope = np.minimum(1.0, t / 0.01) * np.exp(-t * 18)
         notes.append(0.18 * envelope * np.sin(2 * np.pi * frequency * t))
     return np.concatenate(notes).astype(np.float32)
+
+
+# A spoken message from the phone app is a sentence or two; anything longer is cut here.
+MAX_CLIP_SECONDS = 30
+
+
+def decode_clip(data: bytes) -> np.ndarray:
+    """A recording made elsewhere (the phone app's mic: WebM/Opus, or any format PyAV reads), as
+    16 kHz mono float32. Decoded in memory; it never touches the disk. ValueError if unreadable."""
+    import io
+
+    import av  # comes with faster-whisper (whose own decode_audio does not run on PyAV 19)
+
+    pieces: list[np.ndarray] = []
+    limit = MAX_CLIP_SECONDS * SAMPLE_RATE
+    try:
+        with av.open(io.BytesIO(data), mode="r") as container:
+            resampler = av.AudioResampler(format="s16", layout="mono", rate=SAMPLE_RATE)
+            for frame in container.decode(audio=0):
+                for out in resampler.resample(frame):
+                    pieces.append(out.to_ndarray().reshape(-1))
+                if sum(len(p) for p in pieces) >= limit:
+                    break
+            else:
+                pieces.extend(out.to_ndarray().reshape(-1) for out in resampler.resample(None))
+    except (av.FFmpegError, IndexError, ValueError) as exc:  # not audio, or no audio stream
+        raise ValueError("That recording could not be read.") from exc
+    if not pieces:
+        return np.zeros(0, np.float32)
+    return (np.concatenate(pieces)[:limit].astype(np.float32) / 32768.0)

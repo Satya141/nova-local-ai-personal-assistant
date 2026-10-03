@@ -13,11 +13,18 @@ import { type Reminder, dismissReminder, listenForEvents, snoozeReminder } from 
 export default function Toast() {
   const [reminders, setReminders] = useState<Reminder[]>([]);
   const panel = useRef<HTMLElement>(null);
+  // Each reminder rings once, though a reconnect replays the ones still waiting.
+  const rung = useRef(new Set<string>());
 
   useEffect(() => {
     if (!isTauri()) return;
     return listenForEvents((event) => {
       if (event.type !== "reminder" || !event.reminder.pending_ack) return;
+      const key = `${event.reminder.id}@${event.reminder.fired_at}`;
+      if (!rung.current.has(key)) {
+        rung.current.add(key);
+        invoke("ring").catch(() => {});
+      }
       // A reconnect replays unacknowledged reminders; keep one card per reminder.
       setReminders((shown) => [...shown.filter((r) => r.id !== event.reminder.id), event.reminder]);
     });

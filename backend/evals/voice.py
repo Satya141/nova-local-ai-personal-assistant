@@ -105,7 +105,9 @@ async def main() -> int:
     store = SettingsStore(db)
     store.set_bool(WAKE_SETTING, True)
     bus = EventBus()
-    service = VoiceService(bus, store, settings.models_dir, microphone_factory=ScriptedMic, player=lambda *a: True)
+    service = VoiceService(
+        bus, store, settings.models_dir, microphone_factory=ScriptedMic, player=lambda *a: True, whisper=settings.whisper_models()
+    )
     voice = PiperVoice.load(settings.models_dir / "voices" / "en_US-ljspeech-high.onnx")
     rng = np.random.default_rng(7)
 

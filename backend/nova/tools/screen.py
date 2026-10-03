@@ -34,5 +34,7 @@ def screen_tools(reader: ScreenReader) -> list[Tool]:
             read_only=True,
             # What is on screen can include text written to steer NOVA.
             reads_untrusted=True,
+            # From a phone it would show the PC's screen to someone away from it.
+            at_the_pc=True,
         )
     ]

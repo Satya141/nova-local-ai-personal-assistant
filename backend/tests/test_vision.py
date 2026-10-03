@@ -198,3 +198,22 @@ def test_capture_a_real_window():
     pixels = np.asarray(shot.image.convert("RGB")).astype(int)
     reds = int(((pixels[..., 0] > 150) & (pixels[..., 1] < 80) & (pixels[..., 2] < 80)).sum())
     assert reds > 200, "the red label text was captured"
+
+
+async def test_a_request_from_a_phone_never_looks_at_the_pcs_screen(store, db):
+    """On the real phone, "Do I have any unread email?" (Gmail not connected) made the model ask
+    to look at the PC's screen, and it was approved: a screenshot of the PC, for someone away from it."""
+    reader = ScreenReader(FakeVision(), fake_capture)
+    registry = ToolRegistry()
+    for tool in screen_tools(reader):
+        registry.register(tool)
+    provider = FakeProvider([[call("look_at_screen", question="Do I have any unread email?")], [say("Gmail isn't connected.")]])
+    log = ActionLog(db)
+    agent = Agent(provider, registry, PermissionGate(confirm_timeout=5), store, screen=reader, actions=log)
+
+    events = [e async for e in agent.run_turn(store.create_conversation(), "Do I have any unread email?", remote=True)]
+
+    assert provider.offered[0] == [], "not offered to the model"
+    assert "confirm_request" not in [e["type"] for e in events], "and refused in code, without asking"
+    assert "from their phone" in provider.requests[1][-1].content
+    assert log.recent()[0]["outcome"] == "rejected"

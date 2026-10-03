@@ -1,5 +1,56 @@
 # Changelog
 
+## 0.12.1 (reminders ring on a locked phone) - 2026-10-03
+
+On the user's real phone, a reminder rang on the PC but not on the phone: Android pauses a web page when the screen is off, so the page could not ring. Now the PC sends it as a notification.
+
+### Phone
+- **Reminders on a locked phone** (phone app, on the chat screen until turned on, and under Memory): **Turn on** asks Chrome for permission once. Then every reminder or finished task that rings on the PC also rings on the phone as a notification (sound, vibration, stays until tapped), even when the phone is locked or NOVA is closed. A tap opens NOVA with the reminder's Done and Snooze. **Send a test** rings it once on request; **Turn off** stops it.
+- While NOVA is open on screen the phone shows its reminder card instead, so nothing rings twice.
+- **Reminders make a sound.** The laptop plays Windows' own reminder sound when the pop-up appears (`ring` in the shell; a never-clicked WebView2 page can't play audio). The phone app plays a two-note chime and buzzes when a reminder card appears (Web Audio, no sound file; it can sound after the first touch, which browsers require). On a locked phone, Android's notification sound plays.
+
+### How it works
+- Web Push (`nova/phone/push.py`). A locked phone's browser only wakes for its own push service (Google's, for Chrome), so each message goes through it. It is sealed on the PC for that one browser (RFC 8291, aes128gcm), so the service can't read it, and signed with the PC's own key (VAPID, RFC 8292), which is kept in the vault. Built on `cryptography`, already a dependency, so there's no new package. The encryption matches RFC 8291's worked example byte for byte.
+- The PC only ever posts to browsers' push services (`PUSH_SERVICES`), so a paired phone can't point it anywhere else. Subscriptions live in `push_subscriptions` (migration 8), one per phone, and go when the phone is removed. A subscription the browser dropped (HTTP 404/410) is forgotten. With no internet, nothing is sent and the phone still shows the card when it is opened. Nothing is sent while phone access is off.
+- API (phone only): `GET/POST/DELETE /api/push`, `POST /api/push/test`.
+- Checked end to end in a hidden Edge through Microsoft's real push service: the test notification arrived, and so did a reminder that came due with no NOVA page open. 16 new tests, 328 in all. Then confirmed on the user's real Android phone (Chrome, through Google's service): a reminder rang on the locked phone. With earbuds connected Android plays the sound in them, and the site's own notification settings (Chrome → Sites) decide sound, pop-up and lock screen.
+
+### Talking to Nova from the phone
+- **A mic button on the phone** (next to Send, while the PC is reachable): tap, speak, and it stops by itself when you pause (or tap ■). The recording goes over the encrypted link to the PC, whose own Whisper turns it into text, and it is sent like a typed message. It never goes to Google's or anyone's speech service and is never stored (decoded in memory with PyAV; `faster_whisper.decode_audio` does not run on PyAV 19). A leading "Hey Nova" is dropped.
+- `POST /api/transcribe` (phone and PC; 3 MB, 30 s at most) and `hearing_ready` in `/api/health`.
+- On the real phone Whisper made lines up from noise ("I am not going to be a doctor", three times). Phone recordings are now heard as clips: silence and noise cut first (Silero VAD, bundled with faster-whisper), unsure segments dropped, no carry-over between segments, and a line repeated three or more times thrown away. Speech in noise still comes through; noise alone and silence now give nothing. The PC's own mic is unchanged.
+- Checked end to end: synthetic speech in WebM/Opus heard exactly (3/3), and a phone-sized Edge with a fake microphone saying "Remind me in ten minutes to drink water" set that reminder. 5 new tests.
+
+### Better hearing: Whisper small.en
+- The command model (what follows "Hey Nova", the mic button, and the phone's recordings) is now `small.en` (464 MB, downloaded with the user's OK) instead of `base.en`, which misheard the user's phone recordings. `tiny.en` still spots the wake phrase. Configured in `config.py` (`whisper_command_model`, `NOVA_WHISPER_COMMAND_MODEL`); without `small.en` on disk NOVA falls back to `base.en`. `scripts/setup.ps1` now fetches `small.en`.
+- `evals/voice.py`: 33/33 with either model; a command is ready 1.52 s after the speech ends instead of 1.08 s.
+
+### Pocket model for more phones
+- The user's phone has WebGPU but its graphics chip lacks 16-bit maths (`shader-f16`), which the 1.7B pocket model needs. The PC now also offers **Qwen3-0.6B in 32-bit maths** (342 MB, `pocket_model_small`) to such phones: the phone says whether it has 16-bit maths (`GET /api/pocket?f16=false`) and gets the model it can run. `scripts/fetch_pocket_model.py --small-only` downloads it.
+- `evals/pocket.py --small`: 22/22 over two runs, the same as the 1.7B model. In pocket mode code decides reminders and what to remember, so the smaller model only answers questions from the phone's copy.
+
+### Fixed (found on the real phone)
+- **A question from the phone could look at the PC's screen.** "Do I have any unread email?" (Gmail not connected) made the model ask to take a screenshot, and it was approved. Tools that need the user at the PC (`Tool.at_the_pc`: `look_at_screen`) are now neither offered nor run for a request from a phone, whatever the model says.
+- **Unconnected accounts got a made-up answer.** With only a line in the prompt, the model asked to look at the screen for unread email (3/3) and described an empty calendar that isn't connected (3/3). Each unconnected account now has a small stand-in tool (`email_not_connected`, `calendar_not_connected`, `github_not_connected`) that says it isn't connected and how to connect it. 3 new eval scenarios (they run with no accounts connected): 0/6 before, all pass now; 92/94 overall, and the 2 failures are `reminder_weekday`, which fails the same way without this change (on a Saturday, "Friday at 5 PM" became Wednesday the 14th).
+
+## 0.12.0 (Phase 8, part 2: Nova on the phone, with the PC off) - 2026-10-02
+
+Chat with Nova on your phone even when the PC is off or out of reach. A small AI model runs in the phone's own browser.
+
+### Phone
+- **Put Nova on this phone** (phone app → Memory): copies NOVA's pocket model, Qwen3-1.7B (about 990 MB), from your PC to the phone over your network, never from the internet, once. Needs Chrome with WebGPU (Android 12 or newer and a recent phone); the card says plainly when a phone cannot, or has too little free space. **Remove from this phone** frees the space.
+- **When the PC is away**, ask Nova questions about what it knows ("what's my sister's name?", "when is my exam?"), tell it things to remember, and set reminders ("in 10 minutes", "tomorrow at 7 AM", "on Friday", "in half an hour"). Everything you add reaches the PC by itself when the phone sees it again.
+- Things only the PC can do ("open VS Code", "check my email") get an honest "that needs your PC" instead of a pretend answer.
+- The phone notices within 15 seconds when the PC goes away while the app is open, and switches to pocket mode by itself.
+
+### How it decides
+- A 1.7B model is not trusted with what it is not good at, so pocket mode decides in code: what a message asks for, a reminder's time and wording (read from your words, so no date is ever worked out by the model), and what to remember (your own sentence). The model only answers questions, from the phone's copy of the memory. Secrets are refused on the phone and again by the PC when it syncs.
+- The PC serves the model at `/pocket/…` (the files web-llm asks for, and nothing else) and says which one at `GET /api/pocket`. Phone pages may now run WebAssembly (`'wasm-unsafe-eval'`).
+
+### Quality
+- `evals/pocket.py`: the real model in a phone-sized Edge on WebGPU, the PC switched off, 10 messages, then the PC back on and the sync checked. 22/22 over two runs (it began at 4/8; each failure became a code fix: memories reworded and duplicated, reminders without times, a claimed "VS Code is now open").
+- 8 new tests for serving the model (only the configured files, no path tricks, the PC's token still needed). 312 unit tests.
+- New: `@mlc-ai/web-llm` 0.2.85 (loaded only by pocket mode), `scripts/fetch_pocket_model.py` (puts the model in `backend/models/pocket`).
 ## 0.11.0 (Phase 10: the installer) - 2026-10-01
 
 NOVA now builds into a Windows installer: `NOVA_0.11.0_x64-setup.exe`, 417 MB, per-user, no admin rights. It carries Python, NOVA's packages and the voice models; the first-run screen helps with Ollama and the language models.

@@ -252,8 +252,12 @@ class Agent:
         voice: bool = False,
         screen: bool = False,
         unattended: bool = False,
+        remote: bool = False,
     ) -> AsyncIterator[dict[str, Any]]:
         """One turn. `screen` means the user pressed the screen button: look first, no confirmation.
+
+        `remote` is a request from a phone: tools that need the user at the PC are neither
+        offered nor run (`Tool.at_the_pc`).
 
         `unattended` is a scheduled task: nobody can confirm anything, so whatever needs a
         confirmation is declined, and no memories are extracted from a request the user did
@@ -270,7 +274,7 @@ class Agent:
         # Set once this turn has read content NOVA does not control; see PermissionGate.
         # "sources" is where web addresses may legitimately come from: the user's words and the
         # pages and results NOVA read.
-        turn: dict[str, Any] = {"tainted": False, "sources": user_text, "unattended": unattended}
+        turn: dict[str, Any] = {"tainted": False, "sources": user_text, "unattended": unattended, "remote": remote}
         if screen and self._screen:
             turn["tainted"] = True
             # The screen button: the vision model's answer is the reply. Handing it to the chat
@@ -293,7 +297,7 @@ class Agent:
                 )
                 text: list[str] = []
                 calls: list[ToolCall] = []
-                async for chunk in self._provider.chat(messages, self._registry.schemas()):
+                async for chunk in self._provider.chat(messages, self._registry.schemas(remote=remote)):
                     if chunk.text:
                         text.append(chunk.text)
                         yield {"type": "token", "text": chunk.text}
@@ -344,7 +348,7 @@ class Agent:
             )
             return
 
-        prepared = self._prepare(call)
+        prepared = self._prepare(call, remote=turn["remote"])
         if isinstance(prepared, ToolResult):
             # Rejected before it could run: unknown tool or arguments that do not fit its schema.
             summary = call.name
@@ -443,9 +447,15 @@ class Agent:
             self._store.add_message(conversation_id, Message(role="assistant", content=seen))
             yield {"type": "token", "text": seen}
 
-    def _prepare(self, call: ToolCall) -> tuple[Any, Any] | ToolResult:
+    def _prepare(self, call: ToolCall, remote: bool = False) -> tuple[Any, Any] | ToolResult:
         """Resolve the tool and validate its arguments. The model's word is not trusted for either."""
         tool = self._registry.get(call.name)
+        if tool is not None and remote and tool.at_the_pc:
+            return ToolResult(
+                False,
+                f"{call.name} is not available: the user is writing from their phone, away from the PC. "
+                "Answer without it.",
+            )
         if tool is None:
             return ToolResult(
                 False, f"There is no tool named '{call.name}'. Available tools: {', '.join(self._registry.names())}."

@@ -180,6 +180,14 @@ button {
   outline: 2px solid var(--accent);
 }
 
+/* The phone's mic button, while it records or the PC is hearing it. */
+.phone-mic[data-active="true"] {
+  border-color: transparent;
+  background: var(--accent-soft);
+  color: var(--accent);
+  animation: mic-glow 1.4s ease-out infinite;
+}
+
 /* While NOVA listens or talks, the button becomes "stop" and glows. */
 .mic-button[data-active="true"] {
   background: var(--accent-soft);
@@ -239,6 +247,7 @@ button {
   .rise,
   .toast-in,
   .mic-button[data-active="true"],
+  .phone-mic[data-active="true"],
   .icon-draw,
   .spinner,
   .ellipsis::after,

@@ -65,6 +65,12 @@ class Settings:
     # Voice input and output. The microphone only opens when the user turns it on.
     voice: bool = True
     models_dir: Path = field(default_factory=_default_models_dir)
+    # Speech recognition on the CPU, from <models_dir>/whisper: tiny.en spots "Hey Nova"; the
+    # command model hears what follows and the phone app's recordings. small.en replaced base.en
+    # after base.en misheard the user's phone recordings; base.en is used when small.en is absent.
+    whisper_wake_model: str = "tiny.en"
+    whisper_command_model: str = "small.en"
+    whisper_command_fallback: str = "base.en"
     # Phone access (off until the user turns it on): the setup page's port and the app's HTTPS
     # port on the home network, an address to use instead of the one NOVA picks, and where the
     # built phone app is.
@@ -72,11 +78,29 @@ class Settings:
     phone_secure_port: int = 8767
     phone_host: str | None = None
     phone_ui_dir: Path = field(default_factory=_default_phone_ui_dir)
+    # The phone's pocket model (Phase 8), run in the phone's browser by web-llm when the PC is
+    # away, and its compiled WebGPU program. Served from <models_dir>/pocket.
+    pocket_model: str = "Qwen3-1.7B-q4f16_1-MLC"
+    pocket_model_lib: str = "Qwen3-1.7B-q4f16_1_cs1k-webgpu.wasm"
+    # For phones whose graphics chip lacks 16-bit maths (WebGPU shader-f16), as the user's does:
+    # a smaller model in 32-bit maths.
+    pocket_model_small: str = "Qwen3-0.6B-q4f32_1-MLC"
+    pocket_model_small_lib: str = "Qwen3-0.6B-q4f32_1_cs1k-webgpu.wasm"
     max_steps: int = 8
     history_limit: int = 40
     confirm_timeout: float = 120.0
     allowed_origins: tuple[str, ...] = DEFAULT_ORIGINS
     parent_pid: int | None = None
+
+    def whisper_models(self) -> tuple[str, str]:
+        """The wake and command models to use: the configured command model if it is on disk,
+        else the fallback, so an older install keeps working without the bigger download."""
+        from nova.voice.stt import models_present
+
+        command = self.whisper_command_model
+        if models_present(self.models_dir, (command,)) and not models_present(self.models_dir, (self.whisper_command_fallback,)):
+            command = self.whisper_command_fallback
+        return self.whisper_wake_model, command
 
     @property
     def database_path(self) -> Path:
@@ -101,10 +125,15 @@ class Settings:
             vision_model=os.environ.get("NOVA_VISION_MODEL", cls.vision_model),
             browser=_env_bool("NOVA_BROWSER", cls.browser),
             voice=_env_bool("NOVA_VOICE", cls.voice),
+            whisper_command_model=os.environ.get("NOVA_WHISPER_COMMAND_MODEL", cls.whisper_command_model),
             models_dir=Path(os.environ["NOVA_MODELS_DIR"]) if os.environ.get("NOVA_MODELS_DIR") else _default_models_dir(),
             phone_port=int(os.environ.get("NOVA_PHONE_PORT", cls.phone_port)),
             phone_secure_port=int(os.environ.get("NOVA_PHONE_SECURE_PORT", cls.phone_secure_port)),
             phone_host=os.environ.get("NOVA_PHONE_HOST") or None,
+            pocket_model=os.environ.get("NOVA_POCKET_MODEL", cls.pocket_model),
+            pocket_model_lib=os.environ.get("NOVA_POCKET_MODEL_LIB", cls.pocket_model_lib),
+            pocket_model_small=os.environ.get("NOVA_POCKET_MODEL_SMALL", cls.pocket_model_small),
+            pocket_model_small_lib=os.environ.get("NOVA_POCKET_MODEL_SMALL_LIB", cls.pocket_model_small_lib),
             phone_ui_dir=Path(os.environ["NOVA_PHONE_UI_DIR"]) if os.environ.get("NOVA_PHONE_UI_DIR") else _default_phone_ui_dir(),
             allowed_origins=(
                 tuple(o.strip() for o in origins.split(",") if o.strip())

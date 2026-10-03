@@ -123,6 +123,30 @@ fn hide_toast(window: WebviewWindow) {
   let _ = window.hide();
 }
 
+/// A reminder came due: play Windows' own reminder sound (the user's sound scheme decides what
+/// it is, and muting Windows mutes it). The pop-up's web page cannot: it is never clicked, and
+/// WebView2 does not play audio for a page nobody has interacted with.
+#[tauri::command]
+fn ring() {
+  #[cfg(windows)]
+  {
+    #[link(name = "winmm")]
+    unsafe extern "system" {
+      fn PlaySoundW(sound: *const u16, module: *mut std::ffi::c_void, flags: u32) -> i32;
+    }
+    const SND_ASYNC: u32 = 0x0001;
+    const SND_NODEFAULT: u32 = 0x0002;
+    const SND_ALIAS: u32 = 0x0001_0000;
+    for alias in ["Notification.Reminder", "SystemNotification"] {
+      let wide: Vec<u16> = alias.encode_utf16().chain(std::iter::once(0)).collect();
+      // SAFETY: a NUL-terminated UTF-16 alias, no module; SND_ASYNC returns at once.
+      if unsafe { PlaySoundW(wide.as_ptr(), std::ptr::null_mut(), SND_ALIAS | SND_ASYNC | SND_NODEFAULT) } != 0 {
+        break;
+      }
+    }
+  }
+}
+
 fn show_launcher(app: &AppHandle) {
   let Some(window) = app.get_webview_window(LAUNCHER) else {
     return;
@@ -288,6 +312,7 @@ pub fn run() {
       resize_launcher,
       show_toast,
       hide_toast,
+      ring,
       summon_launcher,
       set_voice_indicator
     ])

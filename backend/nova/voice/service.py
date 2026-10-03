@@ -34,7 +34,7 @@ import numpy as np
 
 from nova.events import EventBus
 from nova.settings import SettingsStore
-from nova.voice.audio import SAMPLE_RATE, AudioUnavailable, Microphone, chime, play
+from nova.voice.audio import SAMPLE_RATE, AudioUnavailable, Microphone, chime, decode_clip, play
 from nova.voice.stt import Transcriber, models_present
 from nova.voice.tts import Synthesizer, to_speech
 from nova.voice.vad import Segmenter, StreamingVad
@@ -76,11 +76,12 @@ class VoiceService:
         player: Callable[[np.ndarray, int, threading.Event], bool] = play,
         clock: Callable[[], float] = time.monotonic,
         command_window: float = COMMAND_WINDOW,
+        whisper: tuple[str, str] | None = None,
     ) -> None:
         self._bus = bus
         self._settings = settings
         self._models_dir = models_dir
-        self._transcriber = transcriber or Transcriber(models_dir)
+        self._transcriber = transcriber or (Transcriber(models_dir, *whisper) if whisper else Transcriber(models_dir))
         self._synthesizer = synthesizer or Synthesizer(models_dir)
         self._vad_factory = vad_factory
         self._microphone_factory = microphone_factory
@@ -110,7 +111,7 @@ class VoiceService:
             import sounddevice  # noqa: F401
         except Exception as exc:  # ImportError, or PortAudio missing
             return False, f"Voice needs extra packages: {exc}"
-        missing = models_present(self._models_dir) if isinstance(self._transcriber, Transcriber) else []
+        missing = models_present(self._models_dir, self._transcriber.names) if isinstance(self._transcriber, Transcriber) else []
         if missing:
             return False, f"Voice models missing ({', '.join(missing)}). Run scripts\\setup.ps1."
         return True, self._problem
@@ -161,6 +162,19 @@ class VoiceService:
         with self._lock:
             self._open_mic()
             self._awaiting(source="button")
+
+    async def transcribe_clip(self, data: bytes) -> str:
+        """What was said in a recording from the phone app's mic. The PC's Whisper hears it, in
+        memory: the audio is never stored and never leaves the PC. A leading "Hey Nova" is dropped."""
+        audio = await asyncio.to_thread(decode_clip, data)
+        if not len(audio):
+            return ""
+
+        def hear() -> str:
+            end = self._transcriber.find_wake(audio)
+            return self._transcriber.transcribe(audio[int(end * SAMPLE_RATE) :] if end else audio, clip=True)
+
+        return await asyncio.to_thread(hear)
 
     def speak(self, text: str) -> None:
         spoken = to_speech(text)

@@ -74,6 +74,12 @@ def wake_end(words: list[Word]) -> float | None:
     return None
 
 
+def repeats(text: str) -> bool:
+    """The same sentence said again and again: what Whisper makes up from noise, not what people say."""
+    sentences = [s.strip().lower() for s in re.split(r"[.!?,;]+", text) if s.strip()]
+    return len(sentences) >= 3 and len(set(sentences)) == 1
+
+
 def clean_command(text: str) -> str:
     """Tidy a transcribed command: drop leading fillers and known hallucinations."""
     words = text.strip().split()
@@ -91,6 +97,7 @@ class Transcriber:
     def __init__(self, models_dir: Path, wake_model: str = "tiny.en", command_model: str = "base.en") -> None:
         self._dir = models_dir / "whisper"
         self._names = (wake_model, command_model)
+        self.names = self._names
         self._wake = None
         self._command = None
 
@@ -120,17 +127,24 @@ class Transcriber:
             return None
         return end + _CUT_AFTER_WAKE
 
-    def transcribe(self, audio: np.ndarray) -> str:
+    def transcribe(self, audio: np.ndarray, clip: bool = False) -> str:
+        """`clip` is a recording from the phone app: a whole message, often with silence and noise
+        around it, where Whisper made up lines ("I am not going to be a doctor" three times).
+        Silence is cut first (Silero VAD, bundled with faster-whisper) and unsure segments dropped."""
         self.preload()
         segments, _ = self._command.transcribe(
             audio,
             language="en",
             beam_size=5,
             without_timestamps=True,
-            vad_filter=False,
+            vad_filter=clip,
+            condition_on_previous_text=not clip,
             initial_prompt=_COMMAND_HINT,
         )
-        return clean_command(" ".join(segment.text.strip() for segment in segments))
+        if clip:
+            segments = [s for s in segments if s.no_speech_prob < 0.6 and s.avg_logprob > -1.0 and s.compression_ratio < 2.4]
+        text = clean_command(" ".join(segment.text.strip() for segment in segments))
+        return "" if clip and repeats(text) else text
 
 
 def models_present(models_dir: Path, names: tuple[str, ...] = ("tiny.en", "base.en")) -> list[str]:

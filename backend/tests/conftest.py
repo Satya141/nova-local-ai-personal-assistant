@@ -23,11 +23,13 @@ class FakeProvider:
         self._script = list(script)
         self._json_replies = list(json_replies or [])
         self.requests: list[list[Message]] = []
+        self.offered: list[list[str]] = []  # the tool names offered on each call
         self.json_requests: list[list[Message]] = []
         self.warmed = 0
 
     async def chat(self, messages: list[Message], tools: list[dict[str, Any]]) -> AsyncIterator[ChatChunk]:
         self.requests.append(messages)
+        self.offered.append([tool["function"]["name"] for tool in tools])
         step = self._script.pop(0)
         if isinstance(step, Exception):
             raise step
