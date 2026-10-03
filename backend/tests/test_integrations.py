@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import json
 import sys
@@ -168,7 +169,7 @@ def connected_google(vault, route) -> tuple[GoogleAccount, FakeServer]:
 def gmail_route(request: httpx.Request) -> httpx.Response:
     path = request.url.path
     if path.endswith("/messages") and request.method == "GET":
-        return httpx.Response(200, json={"messages": [{"id": "m1"}]})
+        return httpx.Response(200, json={"messages": [{"id": "m1"}], "resultSizeEstimate": 2456})
     if path.endswith("/messages/m1"):
         headers = [
             {"name": "From", "value": "Priya <priya@example.com>"},
@@ -194,6 +195,7 @@ async def test_gmail_search_read_and_reply(vault):
         {"id": "m1", "from": "Priya <priya@example.com>", "subject": "Lunch?", "date": "Thu, 1 Oct 2026 09:00:00 +0530", "unread": True, "snippet": "Lunch at 1?"}
     ]
     assert "untrusted" in found["note"]
+    assert found["summary"] == "About 2,456 emails match 'is:unread'; showing the newest 1." and found["total"] == 2456
     assert server.requests[0].url.params["q"] == "is:unread"
     assert all(r.headers["authorization"] == "Bearer at" for r in server.requests)
 
@@ -335,3 +337,28 @@ async def test_reading_mail_then_sending_is_blocked(vault):
     assert gate.check(tools["email_send"], reply, tainted=True) is Decision.BLOCK
     assert gate.check(tools["email_draft"], reply, tainted=True) is Decision.CONFIRM, "a draft stays possible, with a warning"
     assert tools["email_read"].reads_untrusted and tools["email_search"].reads_untrusted
+
+
+async def test_a_mail_search_fetches_the_emails_at_once_over_one_connection(vault):
+    """Ten emails one after another meant ten round trips to Google; it felt slow on the real inbox."""
+    created = []
+
+    async def slow(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/messages"):
+            return httpx.Response(200, json={"messages": [{"id": f"m{i}"} for i in range(10)], "resultSizeEstimate": 10})
+        await asyncio.sleep(0.2)  # one round trip to Google
+        return httpx.Response(200, json={"id": request.url.path.rsplit("/", 1)[1], "labelIds": [], "payload": {"headers": []}})
+
+    def client(**kwargs):
+        created.append(1)
+        return httpx.AsyncClient(transport=httpx.MockTransport(slow), **kwargs)
+
+    google = GoogleAccount(vault, http=client)
+    google.set_client(CLIENT)
+    vault.save("google", {"refresh_token": "rt-1", "access_token": "at", "expires_at": time.time() + 3600, "account": "me@x.com"})
+    started = time.monotonic()
+    found = json.loads((await {t.name: t for t in gmail_tools(google)}["email_search"].handler(SearchArgs())).content)
+    assert len(found["emails"]) == 10 and [e["id"] for e in found["emails"]] == [f"m{i}" for i in range(10)]
+    assert time.monotonic() - started < 1.0, "the ten fetches overlap (one after another takes 2 s)"
+    assert len(created) == 1, "one connection, kept open"
+    await google.aclose()

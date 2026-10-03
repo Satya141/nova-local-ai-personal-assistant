@@ -49,7 +49,9 @@ class Settings:
     ollama_url: str = "http://127.0.0.1:11434"
     model: str = "qwen3:8b"
     think: bool = False
-    keep_alive: str = "10m"
+    # How long the chat model stays on the GPU after the last request. At 10 minutes, coming back
+    # after a short break cost a reload before the first answer.
+    keep_alive: str = "30m"
     num_ctx: int = 8192
     # Empty disables embeddings; memory then matches by keywords.
     embed_model: str = "embeddinggemma"
@@ -62,6 +64,8 @@ class Settings:
     vision_num_ctx: int = 4096
     # Web tools in NOVA's own Edge window (a separate, signed-out profile).
     browser: bool = True
+    # Working in the user's own apps (read, click, type) through Windows UI Automation.
+    apps: bool = True
     # Voice input and output. The microphone only opens when the user turns it on.
     voice: bool = True
     models_dir: Path = field(default_factory=_default_models_dir)
@@ -86,7 +90,9 @@ class Settings:
     # a smaller model in 32-bit maths.
     pocket_model_small: str = "Qwen3-0.6B-q4f32_1-MLC"
     pocket_model_small_lib: str = "Qwen3-0.6B-q4f32_1_cs1k-webgpu.wasm"
-    max_steps: int = 8
+    # Tool calls in one request before NOVA stops. Working in an app takes six to eight
+    # (open, read, search, open the chat, type, send), so 8 cut a WhatsApp message short.
+    max_steps: int = 14
     history_limit: int = 40
     confirm_timeout: float = 120.0
     allowed_origins: tuple[str, ...] = DEFAULT_ORIGINS
@@ -125,6 +131,7 @@ class Settings:
             vision_model=os.environ.get("NOVA_VISION_MODEL", cls.vision_model),
             browser=_env_bool("NOVA_BROWSER", cls.browser),
             voice=_env_bool("NOVA_VOICE", cls.voice),
+            apps=_env_bool("NOVA_APPS", cls.apps),
             whisper_command_model=os.environ.get("NOVA_WHISPER_COMMAND_MODEL", cls.whisper_command_model),
             models_dir=Path(os.environ["NOVA_MODELS_DIR"]) if os.environ.get("NOVA_MODELS_DIR") else _default_models_dir(),
             phone_port=int(os.environ.get("NOVA_PHONE_PORT", cls.phone_port)),

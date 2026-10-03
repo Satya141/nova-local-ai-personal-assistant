@@ -70,7 +70,20 @@ class GoogleAccount:
         self._http = http or (lambda: httpx.AsyncClient(timeout=30))
         self._lock = asyncio.Lock()
         self._signing_in: asyncio.Task | None = None
+        self._client: httpx.AsyncClient | None = None
         self.last_error: str | None = None
+
+    def _api(self) -> httpx.AsyncClient:
+        """One client for API calls, kept open: each new one cost a fresh TLS handshake with Google,
+        and a mail search makes eleven calls."""
+        if self._client is None or self._client.is_closed:
+            self._client = self._http()
+        return self._client
+
+    async def aclose(self) -> None:
+        if self._client is not None:
+            await self._client.aclose()
+            self._client = None
 
     # --- state ------------------------------------------------------------------
 
@@ -253,11 +266,10 @@ class GoogleAccount:
         """A Google API call with the user's token; returns the decoded JSON (or None for an empty reply)."""
         for attempt in range(2):
             access = await self._access_token(force_refresh=attempt > 0)
-            async with self._http() as http:
-                try:
-                    response = await http.request(method, url, headers={"Authorization": f"Bearer {access}"}, **kwargs)
-                except httpx.HTTPError as exc:
-                    raise IntegrationError(f"Could not reach Google: {exc}") from exc
+            try:
+                response = await self._api().request(method, url, headers={"Authorization": f"Bearer {access}"}, **kwargs)
+            except httpx.HTTPError as exc:
+                raise IntegrationError(f"Could not reach Google: {exc}") from exc
             if response.status_code == 401 and attempt == 0:
                 continue
             if response.status_code >= 400:

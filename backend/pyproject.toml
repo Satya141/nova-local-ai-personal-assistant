@@ -19,6 +19,8 @@ dependencies = [
     # Phone access: NOVA's own HTTPS certificates, and the pairing QR code.
     "cryptography>=46",
     "segno>=1.6,<2",
+    # Working in the user's apps through Windows UI Automation.
+    "uiautomation>=2.0.20,<3; sys_platform == 'win32'",
 ]
 
 [project.optional-dependencies]

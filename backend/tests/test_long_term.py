@@ -155,3 +155,29 @@ async def test_store_without_embedder_uses_keywords(db):
         "The user runs every morning."
     ]
     assert await plain.search("favourite films") == []
+
+
+@pytest.mark.parametrize(
+    ("message", "request_only"),
+    [
+        ("now send resume to anandhitha on whatsapp", True),  # saved as a "fact" on the real PC
+        ("Send the project report to Priya on WhatsApp", True),
+        ("please book a cab to the airport", True),
+        ("can you open calculator", True),
+        ("Open VS Code, I'm going to work on my portfolio website", False),  # carries a fact
+        ("Find my resume and open it", False),  # left to the model, which keeps nothing
+        ("My sister Priya's birthday is on 12 March", False),
+        ("I live in Hyderabad", False),
+        ("Sending the report was hard today", False),  # not a command
+    ],
+)
+def test_a_plain_command_is_not_mined_for_memories(message, request_only):
+    from nova.memory.extractor import plain_request
+
+    assert plain_request(message) is request_only
+
+
+async def test_the_model_is_not_even_asked_about_a_plain_command(memory):
+    provider = FakeProvider([], json_replies=[{"memories": [{"category": "fact", "content": "The user sends their resume to Anandhitha on WhatsApp."}]}])
+    saved = await MemoryExtractor(provider, memory).extract("now send resume to anandhitha on whatsapp")
+    assert saved == [] and provider.json_requests == []

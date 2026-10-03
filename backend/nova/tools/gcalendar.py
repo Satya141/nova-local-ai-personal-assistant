@@ -156,6 +156,7 @@ def calendar_tools(google: GoogleAccount) -> list[Tool]:
             describe=describe_create,
             risk=Risk.MEDIUM,
             requires_confirmation=True,
+            address_args=("attendees",),
             # Guests receive an invitation by email: that is sending, so it is HIGH.
             risk_for=lambda args: Risk.HIGH if args.attendees else Risk.MEDIUM,
         ),

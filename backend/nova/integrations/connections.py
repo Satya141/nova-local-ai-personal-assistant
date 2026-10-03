@@ -44,6 +44,9 @@ class Connections:
             for tool in tools if connected else missing:
                 registry.register(tool)
 
+    async def aclose(self) -> None:
+        await self.google.aclose()
+
     def status(self) -> dict:
         return {"google": self.google.status(), "github": self.github.status()}
 

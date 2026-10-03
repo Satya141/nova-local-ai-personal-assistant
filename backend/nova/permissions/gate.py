@@ -14,6 +14,8 @@ with a warning, and high-risk actions such as deleting are refused outright.
 
 from __future__ import annotations
 
+import re
+
 import asyncio
 from enum import StrEnum
 from typing import Any
@@ -32,13 +34,26 @@ class Decision(StrEnum):
     BLOCK = "block"
 
 
+def said_by_user(text: str, user_text: str) -> bool:
+    """`text` appears word for word in what the user wrote (case and spacing aside)."""
+    def norm(value: str) -> str:
+        return " ".join(str(value).lower().replace("’", "'").split())
+
+    wanted = norm(text).strip(" \"'.,!?")
+    if not wanted:
+        return False
+    return re.search(rf"(?<!\w){re.escape(wanted)}(?!\w)", norm(user_text)) is not None
+
+
 class PermissionGate:
     def __init__(self, confirm_timeout: float = 120.0) -> None:
         self._confirm_timeout = confirm_timeout
         self._pending: dict[str, asyncio.Future[bool]] = {}
 
-    def check(self, tool: Tool, args: Any, tainted: bool = False) -> Decision:
+    def check(self, tool: Tool, args: Any, tainted: bool = False, user_text: str = "") -> Decision:
         risk = tool.risk_for(args) if tool.risk_for is not None else tool.risk
+        if tainted and tool.user_text_arg and risk is not Risk.HIGH and said_by_user(getattr(args, tool.user_text_arg, ""), user_text):
+            tainted = False
         if tainted and not tool.read_only:
             return Decision.BLOCK if risk is Risk.HIGH else Decision.CONFIRM
         if tool.requires_confirmation or risk is not Risk.LOW:

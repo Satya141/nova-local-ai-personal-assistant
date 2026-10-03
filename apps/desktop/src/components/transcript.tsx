@@ -7,6 +7,10 @@ import type { Item, ToolState } from "@/lib/use-agent";
 /** Which character carries out each tool. Unknown tools, and memory, are Nova's own. */
 const TOOL_OWNERS: Record<string, CharacterKind> = {
   open_application: "ember",
+  read_app: "ember",
+  click_in_app: "ember",
+  type_in_app: "ember",
+  press_keys: "ember",
   search_files: "fern",
   open_path: "fern",
   list_folder: "fern",

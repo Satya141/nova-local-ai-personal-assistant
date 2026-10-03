@@ -117,7 +117,7 @@ class Timeline:
 
 
 def describe(entries: list[Entry], limit: int = 40) -> str:
-    """Entries as short lines for the model, local times, grouped by day. Kept small (rule 16)."""
+    """Entries as short lines for the model, local times, grouped by day. Kept small (rule 17)."""
     if not entries:
         return ""
     shown = entries[-limit:]

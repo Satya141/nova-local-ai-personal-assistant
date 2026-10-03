@@ -32,6 +32,30 @@ _SHORT_LIVED = re.compile(
     re.I,
 )
 
+# A message that is only a command holds no fact about the user. With no tool for the request,
+# nothing marked it as one, and "now send resume to anandhitha on whatsapp" was saved as "The user
+# sends their resume to Anandhitha on WhatsApp." 3/3. Words about the user themselves mean there
+# may be a fact after all ("Open VS Code, I'm going to work on my portfolio website").
+_LEAD = (
+    r"(?:(?:now|ok|okay|so|and|then|also|just|please|pls|plz|kindly|hey nova|hi nova|nova|"
+    r"can you|could you|would you|will you|can u)[,\s]+)*"
+)
+_COMMANDS = (
+    "send", "share", "forward", "text", "message", "msg", "whatsapp", "email", "mail", "call", "ring",
+    "open", "close", "launch", "start", "stop", "run", "play", "pause", "find", "search", "show", "look",
+    "check", "read", "write", "draft", "reply", "post", "tell", "give", "get", "go", "take", "turn",
+    "delete", "remove", "move", "copy", "rename", "sort", "organise", "organize", "create", "make", "add",
+    "set", "remind", "schedule", "cancel", "book", "buy", "order", "download", "upload", "print", "save",
+)
+_REQUEST = re.compile(rf"^\s*{_LEAD}(?:{'|'.join(_COMMANDS)})\b", re.I)
+_ABOUT_THE_USER = re.compile(r"\b(i|i'm|im|i've|i'll|i'd|my|mine|myself|we|we're|our)\b", re.I)
+
+
+def plain_request(message: str) -> bool:
+    """A command and nothing about the user: no memory can come from it."""
+    return bool(_REQUEST.match(message)) and not _ABOUT_THE_USER.search(message)
+
+
 _PROMPT = """\
 You maintain the long-term memory of a personal assistant.
 
@@ -99,6 +123,8 @@ class MemoryExtractor:
         `handled` lists the actions NOVA carried out for this message ("Remind you tomorrow at
         9:00 AM: Review notes"). Those parts of the message were requests, not facts.
         """
+        if plain_request(message):
+            return []
         known = [memory.content for memory, _ in await self._store.search(message, limit=8)]
         today = datetime.now().astimezone()
         # The worked example resolves a weekday against the real calendar, so

@@ -8,6 +8,7 @@ Drafts until the user sends it.
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import html
 import json
@@ -93,13 +94,22 @@ def gmail_tools(google: GoogleAccount) -> list[Tool]:
     async def search(args: SearchArgs) -> ToolResult:
         try:
             listing = await google.request("GET", f"{GMAIL}/messages", params={"q": args.query, "maxResults": args.max_results})
+            # All at once: one after another, ten emails meant ten round trips to Google.
+            fetched = await asyncio.gather(
+                *(
+                    google.request(
+                        "GET",
+                        f"{GMAIL}/messages/{item['id']}",
+                        params={"format": "metadata", "metadataHeaders": ["From", "Subject", "Date"]},
+                    )
+                    for item in (listing or {}).get("messages", [])
+                ),
+                return_exceptions=True,
+            )
+            if problem := next((m for m in fetched if isinstance(m, BaseException)), None):
+                raise problem
             emails = []
-            for item in (listing or {}).get("messages", []):
-                message = await google.request(
-                    "GET",
-                    f"{GMAIL}/messages/{item['id']}",
-                    params={"format": "metadata", "metadataHeaders": ["From", "Subject", "Date"]},
-                )
+            for message in fetched:
                 headers = message.get("payload", {}).get("headers", [])
                 emails.append(
                     {
@@ -113,7 +123,17 @@ def gmail_tools(google: GoogleAccount) -> list[Tool]:
                 )
         except IntegrationError as exc:
             return ToolResult(False, str(exc))
-        return ToolResult(True, json.dumps({"note": UNTRUSTED, "emails": emails}, ensure_ascii=False))
+        # Said in a sentence, first: given only the list, the model reported the first of ten unread
+        # emails as "You have 1 unread email" to a user with 2,456.
+        total = max(int((listing or {}).get("resultSizeEstimate") or 0), len(emails))
+        if not emails:
+            summary = f"No emails match '{args.query}'."
+        elif total > len(emails):
+            summary = f"About {total:,} emails match '{args.query}'; showing the newest {len(emails)}."
+        else:
+            summary = f"{total} email{'s' if total != 1 else ''} match '{args.query}', all listed."
+        result = {"note": UNTRUSTED, "summary": summary, "total": total, "emails": emails}
+        return ToolResult(True, json.dumps(result, ensure_ascii=False))
 
     async def read(args: ReadArgs) -> ToolResult:
         try:
@@ -206,6 +226,7 @@ def gmail_tools(google: GoogleAccount) -> list[Tool]:
             describe=lambda args: f"Save a draft to {to_whom(args)}",
             risk=Risk.MEDIUM,
             requires_confirmation=True,
+            address_args=("to",),
         ),
         Tool(
             name="email_send",
@@ -215,5 +236,6 @@ def gmail_tools(google: GoogleAccount) -> list[Tool]:
             describe=lambda args: f"Send an email to {to_whom(args)}",
             risk=Risk.HIGH,
             requires_confirmation=True,
+            address_args=("to",),
         ),
     ]

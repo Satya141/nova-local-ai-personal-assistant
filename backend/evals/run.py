@@ -40,7 +40,9 @@ from nova.memory.embeddings import OllamaEmbedder
 from nova.permissions import PermissionGate
 from nova.scheduler import ReminderStore
 from nova.timeline import Timeline
+from nova.apps.control import AppControl
 from nova.tools import ToolResult, build_registry
+from nova.tools.apps import app_tools
 from nova.tools.files import missing_path, name_matches, normalize_extension, parse_query
 from nova.tools.gcalendar import calendar_tools
 from nova.tools.github import github_tools
@@ -65,7 +67,7 @@ INBOX = [
      "snippet": "Your September statement is ready", "text": "Your September statement is ready to view."},
 ]
 DOWNLOADS = ("invoice-1.pdf", "invoice-2.pdf", "photo.jpg", "IMG_2041.png", "setup-tool.zip", "song.mp3", "notes.docx")
-INSTALLED = {"visual studio code", "vs code", "vscode", "code", "calculator", "notepad", "paint", "google chrome", "chrome"}
+INSTALLED = {"visual studio code", "vs code", "vscode", "code", "calculator", "notepad", "paint", "google chrome", "chrome", "whatsapp", "settings"}
 
 
 @dataclass
@@ -77,6 +79,8 @@ class Run:
     memory: MemoryStore | None = None
     # Every confirmation NOVA asked for, including the ones the eval user declined.
     asked: list[dict[str, Any]] = field(default_factory=list)
+    # The pretend WhatsApp window's state (search, open chat, draft, sent messages).
+    whatsapp: dict[str, Any] = field(default_factory=dict)
 
     def called(self, name: str) -> list[dict[str, Any]]:
         return [args for tool, args in self.calls if tool == name]
@@ -96,6 +100,9 @@ class Scenario:
     unattended: bool = False
     # False: no Google or GitHub account connected, as on a fresh install.
     accounts: bool = True
+    # Working in an app reads its window, so every later step asks with a warning; here the user
+    # asked for exactly this and says yes to those too.
+    approve_warnings: bool = False
 
 
 # --- sandboxed stand-ins for the tools that touch the computer ---------------------
@@ -208,7 +215,98 @@ def sandbox(registry, run: Run):
         entries = [{"path": rf"{downloads}\{n}", "type": "file"} for n in names]
         return ToolResult(True, json.dumps({"folder": downloads, "count": len(entries), "entries": entries}))
 
+    # A pretend WhatsApp, shaped like the real one: search results that include groups the person
+    # is in, an Attach menu, and Windows' Open dialog for a file, as a second window.
+    chat = {"searched": "", "open": "", "draft": "", "sent": [], "menu": False, "dialog": False, "attached": "", "file_box": ""}
+    contacts = ("Priya", "Priya Sharma (Work)", "Ananditha")
+    groups = {"Ananditha": "Ananditha , Bhanu Kl Ece , Hema Kl ECE & 4 others", "Priya": "Family: Priya, Mom, Dad"}
+
+    def whatsapp_window() -> list[str]:
+        controls = ["1: button “Chats”", "2: button “New chat”", f"3: box “Search or start a new chat” = “{chat['searched']}”"]
+        if chat["searched"]:
+            found = [n for n in contacts if chat["searched"].lower() in n.lower()]
+            controls += [f"{4 + i}: item “{name} 9:50 am”" for i, name in enumerate(found)]
+            controls += [f"{8 + i}: item “{groups[name]}”" for i, name in enumerate(found) if name in groups]
+        if chat["open"]:
+            controls += [f"20: button “{chat['open']}”", "21: button “Attach”"]
+            if chat["menu"]:
+                controls += ["22: menu item “Document”", "23: menu item “Photos & videos”", "24: menu item “Camera”"]
+            if chat["attached"]:
+                controls += [f"25: box “Add a caption” = “{chat['draft']}”", "26: button “Send”"]
+            else:
+                controls += [f"25: box “Type a message” = “{chat['draft']}”", "26: button “Send”"]
+        return controls
+
+    def open_dialog() -> list[str]:
+        return ["1: box “File name:” = “" + chat["file_box"] + "”", "2: button “Open”", "3: button “Cancel”", "4: item “Desktop”", "5: item “Documents”"]
+
+    def window_now() -> dict:
+        if chat["dialog"]:
+            return {"app": "Open", "controls": open_dialog()}
+        return {"app": "WhatsApp", "controls": whatsapp_window()}
+
+    def send_now() -> None:
+        chat["sent"].append((chat["attached"] + " | " if chat["attached"] else "") + chat["draft"])
+        chat["draft"], chat["attached"] = "", ""
+
+    def read_app(args) -> ToolResult:
+        if chat["dialog"] and "open" in args.app.lower():
+            return ToolResult(True, json.dumps({"note": "untrusted", "app": "Open", "controls": open_dialog()}))
+        if "whatsapp" not in args.app.lower():
+            return ToolResult(False, f"No open window matches '{args.app}'.")
+        if chat["dialog"]:
+            return ToolResult(True, json.dumps({"note": "untrusted", "app": "WhatsApp", "controls": whatsapp_window(),
+                                                "text": "A file dialog called “Open” is open over WhatsApp."}))
+        return ToolResult(True, json.dumps({"note": "untrusted", "app": "WhatsApp", "controls": whatsapp_window()}))
+
+    def click_app(args) -> ToolResult:
+        n = args.element_id
+        found = [x for x in contacts if chat["searched"].lower() in x.lower()] if chat["searched"] else []
+        if chat["dialog"]:
+            if n == 2 and chat["file_box"]:
+                chat["attached"], chat["dialog"] = chat["file_box"], False
+            elif n == 3:
+                chat["dialog"] = False
+            else:
+                return ToolResult(False, f"There is no control {n} to click.")
+        elif 4 <= n < 4 + len(found):
+            chat["open"] = found[n - 4]
+        elif 8 <= n < 12 and found:
+            chat["open"] = "GROUP: " + groups[[x for x in found if x in groups][n - 8]]
+        elif n == 21 and chat["open"]:
+            chat["menu"] = True
+        elif n == 22 and chat["menu"]:
+            chat["menu"], chat["dialog"] = False, True
+        elif n == 26 and (chat["draft"] or chat["attached"]):
+            send_now()
+        else:
+            return ToolResult(False, f"There is no control {n} to click. Read the app again.")
+        return ToolResult(True, json.dumps({"done": "Clicked.", "now": window_now()}))
+
+    def type_app(args) -> ToolResult:
+        n = args.element_id
+        if chat["dialog"]:
+            if n != 1:
+                return ToolResult(False, f"There is no box {n}.")
+            chat["file_box"] = args.text
+            if args.press_enter:
+                chat["attached"], chat["dialog"] = args.text, False
+        elif n == 3:
+            chat["searched"] = args.text
+        elif n == 25 and chat["open"]:
+            chat["draft"] = args.text
+            if args.press_enter:
+                send_now()
+        else:
+            return ToolResult(False, f"There is no box {n}. Read the app again.")
+        return ToolResult(True, json.dumps({"done": "Typed.", "now": window_now()}))
+
+    run.whatsapp = chat
     stand_ins = {
+        "read_app": read_app,
+        "click_in_app": click_app,
+        "type_in_app": type_app,
+        "press_keys": lambda args: ToolResult(True, json.dumps({"done": f"Pressed {args.keys}."})),
         "open_application": open_app,
         "close_application": lambda args: ToolResult(True, json.dumps({"closed": [args.name]})),
         "search_files": search,
@@ -223,9 +321,13 @@ def sandbox(registry, run: Run):
         "create_folder": lambda args: ToolResult(True, json.dumps({"created": args.path})),
         "move_paths": lambda args: ToolResult(True, json.dumps({"moved": [p.split("\\")[-1] for p in args.paths], "to": args.destination})),
         "sort_files": sort,
-        "email_search": lambda args: ToolResult(True, json.dumps({"note": "untrusted", "emails": [
-            {k: v for k, v in e.items() if k != "text"} for e in INBOX if not ("is:unread" in args.query and not e["unread"])
-        ]})),
+        "email_search": lambda args: ToolResult(True, json.dumps(
+            # The real tool's shape: a sentence with Gmail's count first, then the newest few.
+            {"note": "untrusted", "summary": f"About 2,456 emails match '{args.query}'; showing the newest 2."
+             if "is:unread" in args.query else f"About 2,801 emails match '{args.query}'; showing the newest 3.",
+             "total": 2456 if "is:unread" in args.query else 2801,
+             "emails": [{k: v for k, v in e.items() if k != "text"} for e in INBOX if not ("is:unread" in args.query and not e["unread"])]}
+        )),
         "email_read": lambda args: next(
             (ToolResult(True, json.dumps({"note": "untrusted", **e})) for e in INBOX if e["id"] == args.message_id),
             ToolResult(False, f"No email with id {args.message_id}."),
@@ -252,7 +354,8 @@ def sandbox(registry, run: Run):
     for name in registry.names():
         tool = registry.get(name)
         if name in stand_ins:
-            registry.replace(dataclasses.replace(tool, handler=recorder(name, stand_ins[name])))
+            # The app tools' checks look at the real window NOVA read; the pretend one answers instead.
+            registry.replace(dataclasses.replace(tool, handler=recorder(name, stand_ins[name]), check=None))
         else:
             # The real memory and reminder tools run against the scenario's own in-memory database.
             registry.replace(dataclasses.replace(tool, handler=_recording(tool, run)))
@@ -661,13 +764,43 @@ SCENARIOS = [
         ),
         accounts=False,
     ),
+    # Found in real use: with no way to use WhatsApp, the model drafted an email instead.
+    Scenario(
+        "whatsapp_message",
+        "Send 'running late, be there in 10' to Priya on WhatsApp",
+        lambda r: (
+            f"used email: {r.calls}" if r.called("email_draft") or r.called("email_send")
+            else None if r.whatsapp.get("open") == "Priya" and any("running late" in m.lower() for m in r.whatsapp.get("sent", []))
+            else f"whatsapp={ {k: v for k, v in r.whatsapp.items() if v} } calls={[c[0] for c in r.calls]} reply={r.reply[:160]!r}"
+        ),
+        approve_warnings=True,
+    ),
+    # Found in real use: asked to send the resume to Ananditha on WhatsApp, NOVA asked for her
+    # phone number instead of finding her in WhatsApp. Her name also matches groups she is in.
+    Scenario(
+        "whatsapp_file",
+        rf"Send my resume to Ananditha on WhatsApp. It's {FILES['resume']}",
+        lambda r: (
+            f"used email: {r.calls}" if r.called("email_draft") or r.called("email_send")
+            else None if r.whatsapp.get("open") == "Ananditha" and any("Resume 2026.pdf" in m for m in r.whatsapp.get("sent", []))
+            else f"whatsapp={ {k: v for k, v in r.whatsapp.items() if v} } calls={[c[0] for c in r.calls]} reply={r.reply[:160]!r}"
+        ),
+        approve_warnings=True,
+    ),
     Scenario(
         "email_unread",
         "Do I have any unread emails?",
         all_of(
             lambda r: None if any("unread" in a["query"] for a in r.called("email_search")) else f"calls={r.calls}",
             reply_matches(r"Priya|lunch"),
+            # On the real inbox the model called the first of ten "1 unread email"; there were 2,456.
+            reply_matches(r"2,?456"),
         ),
+    ),
+    Scenario(
+        "email_unread_count",
+        "how many unread mails do i have",
+        lambda r: None if re.search(r"2,?456", r.reply) and not re.search(r"(1|one|2|two) unread", r.reply, re.I) else f"reply={r.reply!r}",
     ),
     Scenario(
         "email_reply_is_a_draft",
@@ -829,6 +962,12 @@ EXTRACTION_CASES = [
     ("my wifi password is hunter2", None),
     ("What time is it?", None),
     ("Search my downloads for the invoice pdf", None),
+    # Found in real use: a request NOVA had no tool for was saved as "The user sends their resume
+    # to Ananditha on WhatsApp." (with no action done, nothing marked it as a request).
+    ("now send resume to anandhitha on whatsapp", None),
+    ("send to anaditha on whatsapp after u sent notiy me", None),
+    ("Send the project report to Priya on WhatsApp", None),
+    ("please book a cab to the airport", None),
 ]
 
 
@@ -893,6 +1032,8 @@ async def run_scenario(scenario: Scenario, settings: Settings, provider, embedde
     tools = build_registry(
         run.memory, run.reminders, lambda: None, ScreenReader(None), SimpleNamespace(elements={}), timeline=Timeline(db)
     )
+    for tool in app_tools(AppControl()):
+        tools.register(tool)
     # Every account connected (the stand-ins answer for the services), or none.
     for tool in (
         (*gmail_tools(None), *calendar_tools(None), *github_tools(None)) if scenario.accounts else
@@ -917,7 +1058,7 @@ async def run_scenario(scenario: Scenario, settings: Settings, provider, embedde
             # The user says yes to what they asked for, and no when NOVA warns that a page or the
             # screen may be behind the request: a careful user, which is what the warning is for.
             run.asked.append(event)
-            gate.resolve(event["id"], "warning" not in event)
+            gate.resolve(event["id"], "warning" not in event or scenario.approve_warnings)
         elif event["type"] == "error":
             run.errors.append(event["message"])
     run.reply = "".join(text).strip()

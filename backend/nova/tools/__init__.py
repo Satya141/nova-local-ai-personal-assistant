@@ -16,6 +16,7 @@ from nova.tools.timeline import timeline_tools
 from nova.tools.web import web_tools
 
 if TYPE_CHECKING:
+    from nova.apps.control import AppControl
     from nova.browser.session import BrowserSession
     from nova.timeline import Timeline
     from nova.vision.reader import ScreenReader
@@ -30,7 +31,10 @@ def build_registry(
     screen: ScreenReader | None = None,
     browser: BrowserSession | None = None,
     timeline: Timeline | None = None,
+    apps: AppControl | None = None,
 ) -> ToolRegistry:
+    from nova.tools.apps import app_tools  # here, not at the top: nova.apps imports nova.tools._windows
+
     registry = ToolRegistry()
     for tool in (
         open_application,
@@ -43,6 +47,7 @@ def build_registry(
         *(screen_tools(screen) if screen else ()),
         *(web_tools(browser) if browser else ()),
         *(timeline_tools(timeline) if timeline else ()),
+        *(app_tools(apps) if apps else ()),
     ):
         registry.register(tool)
     return registry

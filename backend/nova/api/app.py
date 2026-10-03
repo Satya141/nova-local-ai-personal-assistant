@@ -31,7 +31,9 @@ from nova.config import Settings
 from nova.database import Database, utc_now
 from nova.events import EventBus
 from nova.inference import Message, ModelError, ModelProvider, OllamaProvider
+from nova.apps.control import AppControl
 from nova.integrations.connections import Connections, IntegrationError
+from nova.tools._windows import IS_WINDOWS
 from nova.memory import ConversationStore, MemoryStore
 from nova.memory.embeddings import OllamaEmbedder
 from nova.memory.extractor import MemoryExtractor
@@ -198,7 +200,9 @@ def create_app(
         gate = PermissionGate(settings.confirm_timeout)
         actions = ActionLog(db)
         timeline = Timeline(db)
-        registry = build_registry(memory, reminders, scheduler.poke, screen, browser, timeline=timeline)
+        # The user's own apps, through Windows UI Automation (nova/apps).
+        apps = AppControl() if settings.apps and IS_WINDOWS else None
+        registry = build_registry(memory, reminders, scheduler.poke, screen, browser, timeline=timeline, apps=apps)
         accounts = connections or Connections(settings.data_dir)
         accounts.sync(registry)
         agent = Agent(
@@ -270,6 +274,9 @@ def create_app(
                 await browser.close()
             await scheduler.stop()
             await agent.drain()
+            await accounts.aclose()
+            if apps:
+                apps.close()
             if embedder:
                 await embedder.aclose()
             if vision is not None and vision is not model:

@@ -19,3 +19,4 @@ backend/models/
 
 # Installer staging (scripts/package.ps1)
 dist/
+@AutomationLog.txt

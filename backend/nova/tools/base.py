@@ -58,6 +58,17 @@ class Tool:
     # Needs the user sitting at the PC (it looks at their screen). Never offered to, or run for,
     # a request from a phone: the user is away from the PC, and "your screen" is not the phone's.
     at_the_pc: bool = False
+    # Arguments holding email addresses. Each must come from the user's words, NOVA's memory or
+    # something NOVA read: with no WhatsApp tool, the model saved a draft to an address it made up
+    # ("ananditha@example.com"), and the user approved the card without spotting it.
+    address_args: tuple[str, ...] = ()
+    # The argument holding text the tool puts somewhere (type_in_app's `text`). After outside content
+    # was read, a call whose text is the user's own words, word for word, is not asked about again:
+    # nothing outside could have chosen it. Anything else still asks.
+    user_text_arg: str | None = None
+    # Checked before the gate, so a call that cannot work is refused without asking the user
+    # (typing into a button, clicking a number that is not on screen).
+    check: Callable[[Any], str | None] | None = None
 
     def schema(self) -> dict[str, Any]:
         raw = self.args_model.model_json_schema()

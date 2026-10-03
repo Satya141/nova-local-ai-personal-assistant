@@ -11,7 +11,7 @@ import { PocketPanel } from "@/components/pocket-panel";
 import { ReminderCard, SNOOZE_MINUTES } from "@/components/reminder-card";
 import { TimelinePanel } from "@/components/timeline-panel";
 import { Transcript } from "@/components/transcript";
-import { NotPaired, dismissReminder, health, listenForEvents, pairPhone, snoozeReminder, transcribeClip } from "@/lib/backend";
+import { NotPaired, dismissReminder, health, listenForEvents, pairPhone, snoozeReminder, transcribeClip, warmup } from "@/lib/backend";
 import { type PocketReminder, type PocketView, pocket, syncNow, watchPocket, wipePocket } from "@/lib/pocket";
 import { chime, primeChime } from "@/lib/chime";
 import { type Recording, micSupported, record } from "@/lib/phone-mic";
@@ -205,6 +205,7 @@ export default function PhoneApp() {
   const rungOnline = useRef(new Set<string>());
   useEffect(() => {
     if (!ready) return;
+    warmup(); // load the model on the PC's GPU now, not when the first message arrives
     void syncNow();
     refreshPush().catch(() => {}); // where to ring this phone while it is locked
     const timer = setInterval(() => void syncNow(), 120_000);
