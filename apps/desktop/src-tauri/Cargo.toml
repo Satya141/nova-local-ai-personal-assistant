@@ -3,6 +3,7 @@ name = "nova"
 version = "0.11.0"
 description = "NOVA desktop shell: tray, launcher and backend supervisor"
 edition = "2024"
+license = "MIT"
 rust-version = "1.90"
 
 [lib]

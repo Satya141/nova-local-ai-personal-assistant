@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased (open source) - 2026-10-07
+
+- NOVA is published under the MIT License (`LICENSE`, and the `license` field in `pyproject.toml`, `package.json` and `Cargo.toml`). Piper keeps its GPL-3.0 licence as a separate package.
+- `CONTRIBUTING.md`, `SECURITY.md` (private vulnerability reports), `CODE_OF_CONDUCT.md`, and issue and pull request templates under `.github/`.
+- README: badges, current eval results, known issues, and what the third-party licences mean for NOVA.
+- Tests and the changelog use a made-up contact name instead of a real person's.
+
 ## 0.12.1 (reminders ring on a locked phone) - 2026-10-03
 
 On the user's real phone, a reminder rang on the PC but not on the phone: Android pauses a web page when the screen is off, so the page could not ring. Now the PC sends it as a notification.

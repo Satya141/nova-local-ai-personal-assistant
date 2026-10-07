@@ -2,9 +2,11 @@
 
 **One AI. One Memory. Any Device.**
 
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE) ![Windows 11](https://img.shields.io/badge/platform-Windows%2011-0078D4) ![Python 3.12](https://img.shields.io/badge/python-3.12-3776AB) ![Runs locally](https://img.shields.io/badge/model-runs%20locally-2ea44f)
+
 NOVA is an open-source, local-first AI personal assistant. It runs a language model on your own computer, and it acts: ask it to open an app, find a file or remind you of something and it does that, rather than telling you how.
 
-This repository is at **Phase 10**: all ten phases are built: a Windows desktop agent with long-term memory, reminders, voice, screen understanding, web browsing, file organising, scheduled tasks, your Gmail, Google Calendar and GitHub, and a phone app that works on your Wi-Fi or, with Tailscale, from anywhere. Distributed inference and the life timeline are planned and not built yet.
+This repository is at **Phase 10**: all ten phases are built: a Windows desktop agent with long-term memory, reminders, voice, screen understanding, web browsing, file organising, scheduled tasks, your Gmail, Google Calendar and GitHub, working inside other Windows apps, a life timeline, a phone app that works on your Wi-Fi or, with Tailscale, from anywhere (and keeps working with a small model in the phone's browser while the PC is off), and an installer.
 
 ![NOVA reading an error from the window behind it](docs/screenshots/screen.png)
 
@@ -135,16 +137,26 @@ Set these environment variables before starting NOVA.
 
 ## Quality
 
-The agent is measured against the real local models, not only unit-tested. `backend/evals` runs realistic requests with the computer-facing tools sandboxed. Current results on qwen3:8b: 132/132 agent task runs (44 scenarios, every account connected) (including a web page that tries to make NOVA delete files) and 38/38 memory-extraction cases. Screen understanding with qwen3-vl:8b answered 12 of 12 questions about realistic screens (an editor error, a dialog, a chart, a form, a traceback, an invoice), about 3 to 8 s each once loaded. The voice pipeline, fed synthetic speech at three speeds with background noise, heard 97 of 99 commands exactly and never woke on the 36 sentences that were not meant for it; a command is ready about 0.7 s after you stop speaking. See [AGENTS.md](AGENTS.md) for how to run them.
+The agent is measured against the real local models, not only unit-tested. `backend/evals` runs realistic requests with the computer-facing tools sandboxed. Latest full run on qwen3:8b: 97 of 100 agent task runs, every account connected, including a web page that tries to make NOVA delete files; the misses are the known weekday-reminder bug below. Memory extraction: 38/38 cases. Screen understanding with qwen3-vl:8b answered 12 of 12 questions about realistic screens (an editor error, a dialog, a chart, a form, a traceback, an invoice), about 3 to 8 s each once loaded. The voice pipeline, fed synthetic speech at three speeds with background noise, heard 33 of 33 commands exactly with Whisper small.en; a command is ready about 1.5 s after you stop speaking. See [AGENTS.md](AGENTS.md) for how to run them.
+
+## Known issues
+
+- A weekday reminder said on a later day of the week can land on the wrong date (for example "Friday at 5 PM", said on a Saturday). Being fixed.
+- Not yet tried against the real services: Google Calendar, GitHub, and Tailscale. The installer builds but has not been installed on a clean PC.
+- Real-voice accuracy has been measured with synthetic speech; real microphones vary.
 
 ## Licences of what NOVA uses
 
-The voice uses [Piper](https://github.com/OHF-Voice/piper1-gpl), whose engine is GPL-3.0; the `en_US-ljspeech-high` voice is trained on the public-domain LJ Speech dataset. Whisper models come from [Systran](https://huggingface.co/Systran) (MIT). This matters when NOVA chooses its own licence.
+NOVA's own code is under the MIT License. The voice uses [Piper](https://github.com/OHF-Voice/piper1-gpl), whose engine is GPL-3.0: `scripts\setup.ps1` installs it as a separate package, and an installer that bundles it carries Piper under GPL-3.0. The `en_US-ljspeech-high` voice is trained on the public-domain LJ Speech dataset. Whisper models come from [Systran](https://huggingface.co/Systran) (MIT). The language models (qwen3 through Ollama, and the phone's Qwen3 builds from MLC) are downloaded at setup under their own licences and are not part of this repository.
 
 ## Project layout
 
 See [AGENTS.md](AGENTS.md) for the layout, commands and rules, and [docs/architecture.md](docs/architecture.md) for how it fits together and why.
 
+## Contributing
+
+Contributions are welcome: see [CONTRIBUTING.md](CONTRIBUTING.md) and the [Code of Conduct](CODE_OF_CONDUCT.md). Report security problems privately, as described in [SECURITY.md](SECURITY.md).
+
 ## License
 
-Not chosen yet. Until a license file is added, the code is not licensed for reuse.
+[MIT](LICENSE) © 2026 Satyanarayana J
