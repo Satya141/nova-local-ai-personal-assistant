@@ -219,6 +219,7 @@ def create_app(
             history_limit=settings.history_limit,
             num_ctx=settings.num_ctx,
             prompt_note=accounts.prompt_note,
+            route_tools=settings.tool_router,
         )
         scheduler.run_task = agent.run_task
         app.state.connections = accounts

@@ -39,6 +39,7 @@ from nova.memory.store import ConversationStore
 from nova.permissions.audit import ActionLog, Outcome
 from nova.permissions.gate import TAINT_WARNING, Decision, PermissionGate
 from nova.tools.base import ToolRegistry, ToolResult
+from nova.tools.router import tools_for
 from nova.vision.reader import ScreenReader
 
 log = logging.getLogger(__name__)
@@ -231,6 +232,8 @@ class Agent:
         num_ctx: int = 8192,
         # A line for the system prompt that changes at runtime (which accounts are connected).
         prompt_note: Callable[[], str] = lambda: "",
+        # Show the model only the tools a request is likely to need (nova.tools.router).
+        route_tools: bool = True,
     ) -> None:
         self._provider = provider
         self._registry = registry
@@ -245,11 +248,21 @@ class Agent:
         self._history_limit = history_limit
         self._num_ctx = num_ctx
         self._prompt_note = prompt_note
+        self._route_tools = route_tools
         self._background: set[asyncio.Task] = set()
 
-    def _budget_chars(self) -> float:
+    def _offered(self, conversation_id: str, user_text: str) -> set[str] | None:
+        """The tool names to show for this turn (None: all). Chosen from the user's words only."""
+        if not self._route_tools:
+            return None
+        earlier = [
+            m.content for m in self._store.history(conversation_id, self._history_limit) if m.role == "user"
+        ][:-1]  # the last one is this request
+        return tools_for(user_text, earlier, self._registry.names())
+
+    def _budget_chars(self, offered: set[str] | None = None) -> float:
         """Room for the messages once the tool definitions and a reply are set aside."""
-        tool_tokens = len(json.dumps(self._registry.schemas())) / _TOOL_CHARS_PER_TOKEN
+        tool_tokens = len(json.dumps(self._registry.schemas(only=offered))) / _TOOL_CHARS_PER_TOKEN
         return max(0.0, (self._num_ctx - _REPLY_TOKENS - tool_tokens) * _CHARS_PER_TOKEN)
 
     async def run_task(self, request: str) -> str:
@@ -285,6 +298,7 @@ class Agent:
         self._store.add_message(conversation_id, Message(role="user", content=user_text))
         memories = await self._memory.context_for(user_text) if self._memory else []
         system = _system_message(voice, unattended, self._prompt_note())
+        offered = self._offered(conversation_id, user_text)
         # Identical calls within one turn run once; a model stuck in a loop gets the earlier result back.
         results: dict[str, ToolResult] = {}
         called: set[str] = set()
@@ -318,11 +332,11 @@ class Agent:
             for _ in range(self._max_steps):
                 messages = fit_context(
                     [system, *_with_memories(self._store.history(conversation_id, self._history_limit), memories)],
-                    self._budget_chars(),
+                    self._budget_chars(offered),
                 )
                 text: list[str] = []
                 calls: list[ToolCall] = []
-                async for chunk in self._provider.chat(messages, self._registry.schemas(remote=remote)):
+                async for chunk in self._provider.chat(messages, self._registry.schemas(remote=remote, only=offered)):
                     if chunk.text:
                         text.append(chunk.text)
                         yield {"type": "token", "text": chunk.text}

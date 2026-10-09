@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased (tool router) - 2026-10-08
+
+Found by comparing NOVA with another local agent's write-up: every tool definition was sent with every model call, which cost thousands of tokens of the 8,192-token window before the user's words were read.
+
+- **Tool router** (`nova/tools/router.py`). Code picks the tool groups a request needs (apps, files, web, reminders, memory, email, calendar, GitHub, screen, timeline) from the user's own words and shows the model only those. It reads nothing a tool returned, so outside content cannot change what the model is offered. A short follow-up ("yes do it") is read with the user's message before it. When nothing matches, every tool is offered, as before; a tool that belongs to no group is always offered. Matching is generous on purpose: a tool shown without need costs a few tokens, one hidden when needed fails the request.
+- Only the offer changes. A call is still validated against the full registry and checked by the gate (tests: a tool the model names anyway still asks).
+- Measured on the 31 tools without accounts connected (about 3,900 tokens): a reminder request shows 7 tools (791 tokens, 80% less), a web question 5 (459 tokens, 89% less), a file request 14 to 19 (42 to 54% less). Words like "open" match three groups, so those save the least.
+- `NOVA_TOOL_ROUTER=0` turns it off. `Agent(route_tools=...)`, `ToolRegistry.schemas(only=...)`.
+- Evals on qwen3:8b, 50 scenarios x 3: **150/150 with the router** (median 1.8 s, 342 s in all) against 148/150 without (median 2.0 s, 372 s). The two misses without it (an email sent as a draft, a day's activity not found) are the kind of run-to-run noise these evals show, so the pass-rate difference alone proves nothing; the speed gain is about 10%. `reminder_weekday` passed in both runs: the bug depends on the weekday it is run on (it failed on a Saturday), so it is not fixed.
+- 46 router tests (what each request needs, no typos in the groups, follow-ups, new tools never hidden) and 5 agent-loop tests; 439 tests in all.
+- Checked and left alone: refusing weak spoken app names. `match_app` already uses a tight typo ratio (0.88), reports the app it really opened, and has a regression test ("Photoshop" must not open "Photos").
+
 ## Unreleased (open source) - 2026-10-07
 
 - NOVA is published under the MIT License (`LICENSE`, and the `license` field in `pyproject.toml`, `package.json` and `Cargo.toml`). Piper keeps its GPL-3.0 licence as a separate package.
