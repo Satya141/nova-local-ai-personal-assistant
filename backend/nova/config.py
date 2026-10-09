@@ -57,6 +57,8 @@ class Settings:
     embed_model: str = "embeddinggemma"
     # Notice lasting facts in conversation and save them without being asked.
     auto_memory: bool = True
+    # Show the model only the tools a request is likely to need. Off: every tool, every time.
+    tool_router: bool = True
     # Reads screenshots. Empty disables looking at the screen.
     vision_model: str = "qwen3-vl:8b"
     # A screenshot plus a short answer fits in 4096 tokens. At 8192 qwen3-vl:8b did not
@@ -128,6 +130,7 @@ class Settings:
             num_ctx=int(os.environ.get("NOVA_NUM_CTX", cls.num_ctx)),
             embed_model=os.environ.get("NOVA_EMBED_MODEL", cls.embed_model),
             auto_memory=_env_bool("NOVA_AUTO_MEMORY", cls.auto_memory),
+            tool_router=_env_bool("NOVA_TOOL_ROUTER", cls.tool_router),
             vision_model=os.environ.get("NOVA_VISION_MODEL", cls.vision_model),
             browser=_env_bool("NOVA_BROWSER", cls.browser),
             voice=_env_bool("NOVA_VOICE", cls.voice),

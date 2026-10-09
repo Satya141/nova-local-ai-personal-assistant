@@ -1046,7 +1046,7 @@ async def run_scenario(scenario: Scenario, settings: Settings, provider, embedde
     store = ConversationStore(db)
     agent = Agent(
         provider, registry, gate, store, memory=run.memory, max_steps=settings.max_steps, num_ctx=settings.num_ctx,
-        prompt_note=lambda: note,
+        prompt_note=lambda: note, route_tools=settings.tool_router,
     )
 
     started = time.monotonic()

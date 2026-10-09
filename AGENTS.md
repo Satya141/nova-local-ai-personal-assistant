@@ -11,7 +11,7 @@ Read `docs/architecture.md` before changing how the pieces fit together, and add
 backend/                 Python 3.12, FastAPI. All agent logic lives here.
   nova/agent/            the agent loop (model -> tool -> permission -> result), system prompt
   nova/inference/        ModelProvider interface + the Ollama provider
-  nova/tools/            Tool interface, registry, and each tool
+  nova/tools/            Tool interface, registry, each tool, and router.py (which tools the model is shown)
   nova/permissions/      the permission gate, confirmation flow and action log
   nova/memory/           conversations, long-term memory, embeddings, automatic extraction
   nova/scheduler/        reminders and the loop that fires them
@@ -77,7 +77,7 @@ Run the evals after any change to a prompt, a tool description, the memory pipel
 14. **The browser stays separate and visible.** Its own signed-out profile, never the user's; only http and https (`safe_url`); never sign in, enter credentials, or solve a "are you a person" check. Report the check to the user instead.
 15. **File changes are reversible and contained.** Paths must be inside the home folder and outside AppData; standard folders cannot be moved or deleted; moves never overwrite; deletion goes to the Recycle Bin only. Do not add a permanent delete.
 16. **Unattended runs never act on consent.** A scheduled task runs with `unattended=True`: anything the gate would ask about is declined, not approved. Setting a task up is what the user confirms.
-17. **Keep tool results small.** Ollama silently cuts an oversized prompt from the front, question included. Return what the model needs (see `compact_page`), keep bulky data out of `content` (`ToolResult.vouches` exists for addresses), and leave `fit_context` in the loop.
+17. **Keep tool results small.** Ollama silently cuts an oversized prompt from the front, question included. Return what the model needs (see `compact_page`), keep bulky data out of `content` (`ToolResult.vouches` exists for addresses), and leave `fit_context` in the loop. Tool definitions are part of the prompt too: a new tool goes into a group in `nova/tools/router.py` (a tool in no group is always offered, which works but costs tokens), and the router reads only the user's words, never a tool result.
 18. **Schema changes are new migrations.** Append to `MIGRATIONS` in `nova/database.py`; never edit one that has shipped.
 19. **No secrets in source, and credentials stay in the vault.** Account tokens live only in `nova/integrations/vault.py` (DPAPI). Never log them, return them from the API, put them in the database or action log, or show them to the model. Sign-in happens on the provider's own page; NOVA never handles passwords. Sending mail, inviting guests and posting publicly are `HIGH`.
 20. **Windows stay on NOVA's pages.** The shell's navigation guard opens web links in the user's browser; do not remove it or load remote content into a NOVA window.

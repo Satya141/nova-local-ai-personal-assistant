@@ -126,6 +126,13 @@ class ToolRegistry:
     def names(self) -> list[str]:
         return sorted(self._tools)
 
-    def schemas(self, remote: bool = False) -> list[dict[str, Any]]:
-        """The tools offered to the model; `remote` (a request from a phone) leaves out `at_the_pc` ones."""
-        return [tool.schema() for tool in self._tools.values() if not (remote and tool.at_the_pc)]
+    def schemas(self, remote: bool = False, only: set[str] | None = None) -> list[dict[str, Any]]:
+        """The tools offered to the model; `remote` (a request from a phone) leaves out `at_the_pc` ones.
+
+        `only` limits the offer to those names (see `nova.tools.router`); it never adds a tool.
+        """
+        return [
+            tool.schema()
+            for tool in self._tools.values()
+            if not (remote and tool.at_the_pc) and (only is None or tool.name in only)
+        ]

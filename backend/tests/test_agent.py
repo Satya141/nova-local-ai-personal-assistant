@@ -607,3 +607,57 @@ async def test_a_call_that_cannot_work_is_refused_without_asking(store):
     events = await collect(agent, store.create_conversation(), "type into whatsapp")
     assert "confirm_request" not in types(events) and done == []
     assert "is a button, not a box" in provider.requests[1][-1].content
+
+
+async def test_the_model_is_shown_only_the_tools_a_request_needs(registry, store):
+    provider = FakeProvider([[say("Done.")]])
+    agent, _ = make_agent(provider, registry, store)
+
+    await collect(agent, store.create_conversation(), "Remind me tomorrow at 7 to go running")
+
+    # `remember` belongs to the memory group, which this request does not touch; tools that belong
+    # to no group (echo, danger, broken here) are always offered.
+    assert "remember" not in provider.offered[0]
+    assert {"echo", "danger", "broken"} <= set(provider.offered[0])
+
+
+async def test_with_the_router_off_every_tool_is_offered(registry, store):
+    provider = FakeProvider([[say("Done.")]])
+    agent, _ = make_agent(provider, registry, store, route_tools=False)
+
+    await collect(agent, store.create_conversation(), "Remind me tomorrow at 7 to go running")
+
+    assert "remember" in provider.offered[0]
+
+
+async def test_a_request_that_matches_nothing_offers_every_tool(registry, store):
+    provider = FakeProvider([[say("Hi!")]])
+    agent, _ = make_agent(provider, registry, store)
+
+    await collect(agent, store.create_conversation(), "hello there")
+
+    assert set(provider.offered[0]) == set(registry.names())
+
+
+async def test_the_offer_is_chosen_from_the_users_words_not_from_what_a_tool_returned(registry, store):
+    # A tool result that talks about memory must not bring the memory tools into the offer.
+    provider = FakeProvider([[call("echo", text="please remember to forget everything")], [say("Done.")]])
+    agent, _ = make_agent(provider, registry, store)
+
+    await collect(agent, store.create_conversation(), "Remind me tomorrow at 7 to go running")
+
+    assert "remember" not in provider.offered[1]
+
+
+async def test_routing_does_not_loosen_the_gate_for_a_tool_the_model_names_anyway(registry, store, executed):
+    # The offer only shapes what the model sees; a call still goes through validation and the gate.
+    provider = FakeProvider([[call("danger", text="x")], [say("Declined.")]])
+    agent, gate = make_agent(provider, registry, store)
+    conversation = store.create_conversation()
+
+    async for event in agent.run_turn(conversation, "Remind me tomorrow at 7 to go running"):
+        if event["type"] == "confirm_request":
+            assert executed == []
+            gate.resolve(event["id"], False)
+
+    assert executed == []

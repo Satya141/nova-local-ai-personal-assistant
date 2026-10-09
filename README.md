@@ -111,6 +111,7 @@ Set these environment variables before starting NOVA.
 | `NOVA_THINK` | `false` | Let the model reason before answering (slower) |
 | `NOVA_NUM_CTX` | `8192` | Context window in tokens |
 | `NOVA_KEEP_ALIVE` | `10m` | How long the models stay loaded when idle |
+| `NOVA_TOOL_ROUTER` | `true` | Show the model only the tools a request is likely to need (saves prompt room). Off: every tool, every time |
 | `NOVA_DATA_DIR` | `%LOCALAPPDATA%\NOVA` | Where NOVA's database lives |
 | `NOVA_VISION_MODEL` | `qwen3-vl:8b` | Ollama vision model for reading the screen. Empty turns screen understanding off |
 | `NOVA_VOICE` | `true` | Offer voice at all. The microphone still only opens when you turn it on |
@@ -137,7 +138,7 @@ Set these environment variables before starting NOVA.
 
 ## Quality
 
-The agent is measured against the real local models, not only unit-tested. `backend/evals` runs realistic requests with the computer-facing tools sandboxed. Latest full run on qwen3:8b: 97 of 100 agent task runs, every account connected, including a web page that tries to make NOVA delete files; the misses are the known weekday-reminder bug below. Memory extraction: 38/38 cases. Screen understanding with qwen3-vl:8b answered 12 of 12 questions about realistic screens (an editor error, a dialog, a chart, a form, a traceback, an invoice), about 3 to 8 s each once loaded. The voice pipeline, fed synthetic speech at three speeds with background noise, heard 33 of 33 commands exactly with Whisper small.en; a command is ready about 1.5 s after you stop speaking. See [AGENTS.md](AGENTS.md) for how to run them.
+The agent is measured against the real local models, not only unit-tested. `backend/evals` runs realistic requests with the computer-facing tools sandboxed. Latest full run on qwen3:8b: 150 of 150 agent task runs (50 scenarios, three times each, every account connected), including a web page that tries to make NOVA delete files; the same run with the tool router off passed 148 of 150, and a run on another day missed the weekday-reminder bug below. Memory extraction: 38/38 cases. Screen understanding with qwen3-vl:8b answered 12 of 12 questions about realistic screens (an editor error, a dialog, a chart, a form, a traceback, an invoice), about 3 to 8 s each once loaded. The voice pipeline, fed synthetic speech at three speeds with background noise, heard 33 of 33 commands exactly with Whisper small.en; a command is ready about 1.5 s after you stop speaking. See [AGENTS.md](AGENTS.md) for how to run them.
 
 ## Known issues
 
